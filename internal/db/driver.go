@@ -86,7 +86,9 @@ func executeQuery(ctx context.Context, db *sql.DB, query string) (*QueryResult, 
 	trimmed := strings.TrimSpace(strings.ToUpper(query))
 
 	// Detect SELECT vs DML
-	if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") {
+	if strings.HasPrefix(trimmed, "SELECT") || strings.HasPrefix(trimmed, "WITH") ||
+		strings.HasPrefix(trimmed, "EXPLAIN") || strings.HasPrefix(trimmed, "DESCRIBE") ||
+		strings.HasPrefix(trimmed, "SHOW") {
 		return executeSelect(ctx, db, query, start)
 	}
 	return executeDML(ctx, db, query, start)

@@ -33,6 +33,10 @@ func (m Model) renderPopupOverlay(main string) string {
 		resultsView = m.renderRowActionPopup(resultsView)
 	}
 
+	if m.showExportPopup {
+		resultsView = m.renderExportPopup(resultsView)
+	}
+
 	return resultsView
 }
 
@@ -66,14 +70,24 @@ func (m Model) renderResultsPopup(main string) string {
 		content.WriteString(shortcuts)
 	}
 
-	// Popup width constraint
-	// Use 100% width but rely on table being smaller (width-30)
-	maxPopupWidth := m.width
+	// Popup sizing
+	popupWidth := m.width - 10
+	if popupWidth < 60 {
+		popupWidth = 60
+	}
+	if popupWidth > m.width {
+		popupWidth = m.width - 4
+	}
+	popupHeight := m.height - 6
+	if popupHeight < 15 {
+		popupHeight = 15
+	}
 
+	// Table handles its own horizontal scrolling via h/l keys
 	popupBox := PopupStyle.
-		MaxWidth(maxPopupWidth).
-		MaxHeight(m.height - 4).
-		Background(lipgloss.Color("#1a1b26")).
+		Width(popupWidth).
+		Height(popupHeight).
+		Background(PopupBg()).
 		Render(content.String())
 
 	// Use bubbletea-overlay to composite popup over main content
@@ -82,7 +96,7 @@ func (m Model) renderResultsPopup(main string) string {
 
 func (m Model) renderActionPopup(main string) string {
 	var content strings.Builder
-	content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8BE9FD")).Render("Row Actions"))
+	content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(AccentColor()).Render("Row Actions"))
 	content.WriteString("\n\n")
 	content.WriteString("• Edit Row\n")
 	content.WriteString("• Delete Row\n")
@@ -92,9 +106,9 @@ func (m Model) renderActionPopup(main string) string {
 
 	popupBox := PopupStyle.
 		Width(40).
-		Background(lipgloss.Color("#1a1b26")).
+		Background(PopupBg()).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#bd93f9")).
+		BorderForeground(BorderColor()).
 		Padding(1).
 		Render(content.String())
 
@@ -102,45 +116,21 @@ func (m Model) renderActionPopup(main string) string {
 }
 
 func (m Model) renderRowActionPopup(main string) string {
-	highlightedRow := m.popupTable.HighlightedRow()
+	// highlightedRow := m.popupTable.HighlightedRow()
 
 	var content strings.Builder
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#8BE9FD")).
+		Foreground(AccentColor()).
 		Render("Row Actions")
 	content.WriteString(header + "\n\n")
 
 	// Show available actions
-	content.WriteString("1 - View Full Row\n")
-	content.WriteString("2 - Copy as JSON\n")
-	content.WriteString("3 - Copy as CSV\n")
-	content.WriteString("4 - Select this row\n")
-
-	if highlightedRow.Data != nil && m.popupResult != nil {
-		content.WriteString("\nPreview:\n")
-
-		// Show first 2 fields only
-		count := 0
-		for _, col := range m.popupResult.Columns {
-			if count >= 2 {
-				break
-			}
-			if val, ok := highlightedRow.Data[col]; ok {
-				valStr := fmt.Sprintf("%v", val)
-				if len(valStr) > 25 {
-					valStr = valStr[:22] + "..."
-				}
-				if len(col) > 12 {
-					col = col[:9] + "..."
-				}
-				content.WriteString(fmt.Sprintf("%s: %s\n", col, valStr))
-				count++
-			}
-		}
-	}
-
-	content.WriteString("\nPress 1-3, q to close")
+	content.WriteString("1 - Select this row\n")
+	content.WriteString("2 - View Full Row\n")
+	content.WriteString("3 - Copy as JSON\n")
+	content.WriteString("4 - Copy as CSV\n")
+	content.WriteString("\nPress 1-4, q to close")
 
 	// Calculate max content width
 	// Total rendered width = content width + 2 (borders) + 2 (padding) = content + 4
@@ -155,10 +145,10 @@ func (m Model) renderRowActionPopup(main string) string {
 
 	popupBox := lipgloss.NewStyle().
 		Width(maxContentWidth).
-		Background(lipgloss.Color("#1a1b26")).
-		Foreground(lipgloss.Color("#D8DEE9")).
+		Background(PopupBg()).
+		Foreground(TextPrimary()).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#ff79c6")).
+		BorderForeground(HighlightColor()).
 		Padding(1).
 		Render(content.String())
 
@@ -191,7 +181,7 @@ func (m Model) renderConfirmPopup(main string) string {
 	// Box styling with background
 	popupBox := PopupStyle.
 		Width(min(80, m.width-4)).
-		Background(lipgloss.Color("#1a1b26")). // Dark background for popup
+		Background(PopupBg()). // Dark background for popup
 		Render(content.String())
 
 	// Use bubbletea-overlay to composite popup over main content
@@ -235,4 +225,32 @@ func (m Model) openPager(result *db.QueryResult) tea.Cmd {
 		os.Remove(f.Name()) // Cleanup
 		return PagerFinishedMsg{Err: err}
 	})
+}
+
+func (m Model) renderExportPopup(main string) string {
+	var content strings.Builder
+
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(AccentColor()).
+		Render("Export Results")
+	content.WriteString(header + "\n\n")
+
+	content.WriteString("Enter filename (or path):\n\n")
+	content.WriteString(m.exportInput.View())
+	content.WriteString("\n\n")
+
+	hint := lipgloss.NewStyle().Faint(true).Render("Enter: Export | Esc: Cancel")
+	content.WriteString(hint)
+
+	popupBox := lipgloss.NewStyle().
+		Width(50).
+		Background(PopupBg()).
+		Foreground(TextPrimary()).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(SuccessColor()).
+		Padding(1).
+		Render(content.String())
+
+	return overlay.Composite(popupBox, main, overlay.Center, overlay.Center, 0, 0)
 }

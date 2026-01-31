@@ -71,9 +71,20 @@ type Model struct {
 	page         int // current results page
 
 	// Popup state
+	popupStack         *PopupStack // Stack of popup closers for layered closing
 	showPopup          bool
 	showActionPopup    bool
 	showRowActionPopup bool // NEW: for showing detailed row actions
+	showExportPopup    bool
+	showHelpPopup      bool   // Show keyboard shortcuts
+	showTemplatePopup  bool   // Show query template picker
+	templateTable      string // Table name for template
+	templateIdx        int    // Selected template index
+	exportInput        textinput.Model
+	exportTable        string // Table name being exported
+	showImportPopup    bool   // Show import dialog
+	importInput        textinput.Model
+	importTable        string // Table name for import
 	popupEntry         *history.HistoryEntry
 	popupResult        *db.QueryResult
 	popupTable         table.Model
@@ -91,6 +102,7 @@ type Model struct {
 	// Status
 	loading      bool
 	errorMsg     string
+	statusMsg    string // Success/info notifications (shown in status bar, not history)
 	connectError string
 
 	// Search mode
@@ -110,6 +122,9 @@ type Model struct {
 
 	// Schema browser sidebar
 	schemaBrowser schemabrowser.Model
+
+	// Theme selector
+	themeSelector ThemeSelector
 
 	// Undo/Redo history
 	undoStack []string
@@ -131,7 +146,6 @@ func isModifyingQuery(query string) bool {
 			return true
 		}
 	}
-	return false
 	return false
 }
 
@@ -157,6 +171,9 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 	// Remove cursor line background - keep it transparent
 	ti.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ti.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	// Gray out the placeholder text (use TextFaint for darker appearance)
+	ti.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Error))
+	ti.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Error))
 
 	// Initialize Table Filter Input
 	tfi := textinput.New()
@@ -164,6 +181,27 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 	tfi.Placeholder = "Filter table..."
 	tfi.CharLimit = 100
 	tfi.Width = 30
+
+	// Initialize Export Input
+	ei := textinput.New()
+	ei.Prompt = "Export to: "
+	ei.Placeholder = "export.csv"
+	ei.CharLimit = 256
+	ei.Width = 40
+
+	// Initialize Search Input
+	si := textinput.New()
+	si.Prompt = "/ "
+	si.Placeholder = "Search history..."
+	si.CharLimit = 100
+	si.Width = 30
+
+	// Initialize Import Input
+	ii := textinput.New()
+	ii.Prompt = "Import from: "
+	ii.Placeholder = "path/to/file.csv"
+	ii.CharLimit = 256
+	ii.Width = 40
 
 	vp := viewport.New(80, 10)
 
@@ -185,7 +223,7 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 			SSHPassword: p.SSHPassword,
 		}
 	}
-	ps := profileselector.New(selectorProfiles)
+	ps := profileselector.New(selectorProfiles, cfg.Theme)
 
 	// Determine initial state
 	initialState := StateSelectingProfile
@@ -194,15 +232,33 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 		initialState = StateReady
 	}
 
+	// Initialize eztable global config
+	eztable.Init(cfg.Theme, cfg.Keys)
+
 	return Model{
-		appState:         initialState,
-		mode:             VisualMode,
-		profile:          profile,
-		config:           cfg,
-		driver:           driver,
-		historyStore:     store,
-		profileSelector:  ps,
-		schemaBrowser:    schemabrowser.New(),
+		appState:        initialState,
+		mode:            VisualMode,
+		profile:         profile,
+		config:          cfg,
+		driver:          driver,
+		historyStore:    store,
+		popupStack:      NewPopupStack(),
+		profileSelector: ps,
+		schemaBrowser: schemabrowser.New().SetStyles(schemabrowser.Styles{
+			Container:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(cfg.Theme.Highlight)).Padding(1, 2),
+			Title:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(cfg.Theme.Accent)).MarginBottom(1),
+			SectionTitle:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(cfg.Theme.Highlight)).MarginTop(1).MarginBottom(1),
+			Item:          lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.TextPrimary)),
+			ItemActive:    lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Success)).Bold(true),
+			TableHeader:   lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Accent)).Bold(true).Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color(cfg.Theme.BorderColor)),
+			TableCell:     lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.TextPrimary)),
+			TableCellKey:  lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Success)),
+			TableCellType: lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.TextFaint)),
+			Spinner:       lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Highlight)),
+			TabActive:     lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.Success)).Bold(true).Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color(cfg.Theme.Success)).Padding(0, 1),
+			TabInactive:   lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.Theme.TextFaint)).Padding(0, 1),
+		}),
+		themeSelector:    NewThemeSelector(cfg),
 		editor:           ti,
 		viewport:         vp,
 		history:          []history.HistoryEntry{},
@@ -211,6 +267,9 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 		page:             0,
 		columns:          make(map[string][]db.Column),
 		tableFilterInput: tfi,
+		exportInput:      ei,
+		importInput:      ii,
+		searchInput:      si,
 	}
 }
 
@@ -335,30 +394,122 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.driver = msg.Driver
 		m.appState = StateReady
 		m.connectError = ""
-		// Load history AND schema
-		sb, sbCmd := m.schemaBrowser.StartLoading()
-		m.schemaBrowser = sb
+		m.loadingTables = true // Start loading schema (shown in status bar)
+		// Clear screen and load history AND schema in background
 		return m, tea.Batch(
+			tea.ClearScreen,
 			textarea.Blink,
 			m.loadHistoryCmd(),
 			schemabrowser.LoadSchemaCmd(m.driver),
-			sbCmd,
 		)
 
 	case ClipboardCopiedMsg:
 		if msg.Err != nil {
 			m.errorMsg = fmt.Sprintf("Clipboard error: %v", msg.Err)
+			m.statusMsg = ""
 		} else {
 			m.errorMsg = ""
-			// Show success message
-			m = m.addSystemMessage("Query copied to clipboard")
+			m.statusMsg = "Copied to clipboard"
 		}
 		return m, nil
 
 	case schemabrowser.SchemaLoadedMsg:
 		if msg.Err == nil {
 			m.schemaBrowser = m.schemaBrowser.SetSchema(msg.Tables, msg.Columns, msg.Constraints)
+			m.tables = msg.Tables
+			m.columns = msg.Columns
+			m.statusMsg = fmt.Sprintf("Loaded %d tables", len(msg.Tables))
+		} else {
+			m.errorMsg = fmt.Sprintf("Schema load failed: %v", msg.Err)
 		}
+		m.loadingTables = false
+		if m.autocompleting {
+			m = m.updateSuggestions()
+		}
+		return m, nil
+
+	case schemabrowser.TableSelectedMsg:
+		// Show template popup for selected table
+		m.openTemplatePopup(msg.TableName)
+		return m, nil
+
+	case schemabrowser.ExportTableMsg:
+		// Export table - show export popup with suggested filename
+		m.exportTable = msg.TableName
+		m.openExportPopup(msg.TableName + ".csv")
+		return m, textinput.Blink
+
+	case schemabrowser.ImportTableMsg:
+		// Import into table - show import popup
+		m.openImportPopup(msg.TableName)
+		return m, textinput.Blink
+
+	case ThemeSelectedMsg:
+		m.config.Theme = msg.Theme
+		m.config.ThemeName = msg.ThemeName
+		InitStyles(m.config.Theme)
+
+		// Update sub-components with new theme
+		m.profileSelector = m.profileSelector.SetStyles(profileselector.DefaultStyles(m.config.Theme))
+		m.themeSelector = m.themeSelector.UpdateTheme(m.config.Theme)
+
+		// Update global eztable - this affects new tables
+		eztable.Init(m.config.Theme, m.config.Keys)
+
+		// Recreate existing tables with new theme
+		if m.expandedID != 0 && m.selected >= 0 && m.selected < len(m.history) {
+			entry := m.history[m.selected]
+			if strings.Contains(entry.Preview, " | ") {
+				m.expandedTable = eztable.FromPreview(entry.Preview).WithTargetWidth(m.width - 14)
+			}
+		}
+		if m.popupResult != nil {
+			m.popupTable = eztable.FromQueryResult(m.popupResult, 0).Focused(true)
+			m.updatePopupTable()
+		}
+
+		// Re-initialize schema browser styles
+		m.schemaBrowser = m.schemaBrowser.SetStyles(schemabrowser.Styles{
+			Container:     lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(m.config.Theme.Highlight)).Padding(1, 2),
+			Title:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.config.Theme.Accent)).MarginBottom(1),
+			SectionTitle:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.config.Theme.Highlight)).MarginTop(1).MarginBottom(1),
+			Item:          lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.TextPrimary)),
+			ItemActive:    lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.Success)).Bold(true),
+			TableHeader:   lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.Accent)).Bold(true).Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color(m.config.Theme.BorderColor)),
+			TableCell:     lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.TextPrimary)),
+			TableCellKey:  lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.Success)),
+			TableCellType: lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.TextFaint)),
+			Spinner:       lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.Highlight)),
+			TabActive:     lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.Success)).Bold(true).Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color(m.config.Theme.Success)).Padding(0, 1),
+			TabInactive:   lipgloss.NewStyle().Foreground(lipgloss.Color(m.config.Theme.TextFaint)).Padding(0, 1),
+		})
+
+		// Save config
+		m.config.Save()
+		// Pop theme selector from stack since it closed itself
+		if m.popupStack.TopName() == "theme" {
+			m.popupStack.Pop()
+		}
+		return m, tea.ClearScreen
+
+	case ExportTableCompleteMsg:
+		m.loading = false
+		if msg.Err != nil {
+			m.errorMsg = fmt.Sprintf("Export failed: %v", msg.Err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Exported %d rows to %s", msg.Rows, msg.Filename)
+		}
+		m.exportTable = ""
+		return m, nil
+
+	case ImportTableCompleteMsg:
+		m.loading = false
+		if msg.Err != nil {
+			m.errorMsg = fmt.Sprintf("Import failed: %v", msg.Err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Imported %d rows", msg.Rows)
+		}
+		m.importTable = ""
 		return m, nil
 	}
 
@@ -372,6 +523,71 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Clear status message on any key press
+		m.statusMsg = ""
+
+		// Global keys that should intercept everything (but not typing in InsertMode)
+		// Try to run them only if NOT in InsertMode, OR if they are modifier keys (Ctrl+...)
+		// Don't intercept 't' when schema browser or theme selector is visible
+		if m.mode != InsertMode && !m.schemaBrowser.IsVisible() && !m.themeSelector.Visible() && matchKey(msg, m.config.Keys.ToggleTheme) {
+			m.openThemeSelector()
+			return m, nil
+		}
+
+		// Universal popup close handler - Esc/q closes topmost popup via stack
+		// Fallback to hardcoded "esc"/"q" if Keys.Exit is empty
+		isExitKey := matchKey(msg, m.config.Keys.Exit) || msg.String() == "esc" || msg.String() == "q"
+		// Check both stack AND boolean flags for robustness
+		hasPopup := m.hasOpenPopup() || m.showPopup || m.showHelpPopup || m.showTemplatePopup ||
+			m.showImportPopup || m.showExportPopup || m.showRowActionPopup || m.showActionPopup ||
+			m.themeSelector.Visible()
+		if hasPopup && isExitKey {
+			// Try stack first
+			if m.closeTopPopup() {
+				return m, nil
+			}
+			// Fallback: close any open popup directly
+			if m.showRowActionPopup {
+				m.showRowActionPopup = false
+				return m, nil
+			}
+			if m.showExportPopup {
+				m.showExportPopup = false
+				m.exportInput.Blur()
+				return m, nil
+			}
+			if m.showActionPopup {
+				m.showActionPopup = false
+				return m, nil
+			}
+			if m.showPopup {
+				m.showPopup = false
+				m.tableFilterInput.Blur()
+				m.tableFilterInput.SetValue("")
+				return m, nil
+			}
+			if m.showTemplatePopup {
+				m.showTemplatePopup = false
+				m.templateTable = ""
+				m.templateIdx = 0
+				return m, nil
+			}
+			if m.showImportPopup {
+				m.showImportPopup = false
+				m.importInput.Blur()
+				m.importTable = ""
+				return m, nil
+			}
+			if m.showHelpPopup {
+				m.showHelpPopup = false
+				return m, nil
+			}
+			if m.themeSelector.Visible() {
+				m.themeSelector = m.themeSelector.Hide()
+				return m, nil
+			}
+		}
+
 		if m.confirming {
 			switch msg.String() {
 			case "y", "Y":
@@ -388,6 +604,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Theme selector handling
+		if m.themeSelector.Visible() {
+			var cmd tea.Cmd
+			m.themeSelector, cmd = m.themeSelector.Update(msg)
+			// If theme selector closed itself (e.g., via enter), pop from stack
+			if !m.themeSelector.Visible() && m.popupStack.TopName() == "theme" {
+				m.popupStack.Pop()
+			}
+			return m, cmd
+		}
+
 		// Profile selector handling
 		if m.appState == StateSelectingProfile {
 			var cmd tea.Cmd
@@ -395,7 +622,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
-		// Popup handling
+		// Help popup handling (? toggles)
+		if m.showHelpPopup {
+			if matchKey(msg, m.config.Keys.Help) {
+				m.closeTopPopup()
+				return m, nil
+			}
+			return m, nil // Block other keys while help is shown
+		}
+
+		// Template popup handling
+		if m.showTemplatePopup {
+			switch msg.String() {
+			case "up", "k":
+				if m.templateIdx > 0 {
+					m.templateIdx--
+				}
+				return m, nil
+			case "down", "j":
+				if m.templateIdx < len(m.config.QueryTemplates)-1 {
+					m.templateIdx++
+				}
+				return m, nil
+			case "enter":
+				m.popupStack.Pop() // Remove from stack before executing
+				return m.executeTemplate()
+			case "i":
+				m.popupStack.Pop() // Remove from stack before inserting
+				m = m.insertTemplate()
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Import popup handling
+		if m.showImportPopup {
+			if msg.String() == "enter" {
+				filename := m.importInput.Value()
+				if filename != "" {
+					m.popupStack.Pop() // Remove from stack
+					m.showImportPopup = false
+					m.importInput.Blur()
+					m.importTable = ""
+					m.loading = true
+					return m, m.importTableCmd(m.importTable, filename)
+				}
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.importInput, cmd = m.importInput.Update(msg)
+			return m, cmd
+		}
+
+		// Popup handling (results table popup)
 		if m.showPopup {
 			// Handle filter input if active
 			if m.tableFilterActive {
@@ -405,87 +684,109 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				var cmd tea.Cmd
-				// Convert KeyMsg back to generic Msg for textinput.Update
-				// textinput.Update expects tea.Msg
-				// Since we are inside case tea.KeyMsg, msg is tea.KeyMsg
-				// We need to pass it as tea.Msg
 				m.tableFilterInput, cmd = m.tableFilterInput.Update(msg)
 				m.popupTable = m.popupTable.WithFilterInputValue(m.tableFilterInput.Value())
 				return m, cmd
 			}
 
-			// Row action popup (innermost layer)
-			if m.showRowActionPopup {
-				if matchKey(msg, m.config.Keys.Exit) {
-					m.showRowActionPopup = false
-					return m, nil
+			// Export popup (innermost layer) - Esc handled by stack
+			if m.showExportPopup {
+				if msg.String() == "enter" {
+					filename := m.exportInput.Value()
+					if filename == "" {
+						filename = "export.csv"
+					}
+					m.popupStack.Pop() // Remove export from stack
+					m.showExportPopup = false
+					m.exportInput.Blur()
+					if m.exportTable != "" {
+						m.loading = true
+						return m, m.exportTableCmd(m.exportTable, filename)
+					}
+					return m, m.exportTableToPath(filename)
 				}
+				var cmd tea.Cmd
+				m.exportInput, cmd = m.exportInput.Update(msg)
+				return m, cmd
+			}
+
+			// Row action popup (innermost layer) - Esc handled by stack
+			if m.showRowActionPopup {
 				switch msg.String() {
-				case "1": // View full row
-					// TODO: Implement full row view
-					return m, nil
-				case "2": // Copy as JSON
-					return m, m.copyRowAsJSON()
-				case "3": // Copy as CSV
-					return m, m.copyRowAsCSV()
-				case "4": // Select this row (Query)
+				case "1": // Select this row (Query)
+					m.popupStack.Pop()
 					return m.selectRowAsQuery()
+				case "2": // View full row
+					m.popupStack.Pop()
+					return m.viewFullRow()
+				case "3": // Copy as JSON
+					m.popupStack.Pop()
+					m.showRowActionPopup = false
+					return m, m.copyRowAsJSON()
+				case "4": // Copy as CSV
+					m.popupStack.Pop()
+					m.showRowActionPopup = false
+					return m, m.copyRowAsCSV()
 				}
 				return m, nil
 			}
 
-			// Action menu popup (middle layer)
+			// Action menu popup (middle layer) - Esc handled by stack
 			if m.showActionPopup {
-				if matchKey(msg, m.config.Keys.Exit) {
-					m.showActionPopup = false
-					return m, nil
-				}
 				// TODO: Handle action selection
 				return m, nil
 			}
 
-			// Table popup (outer layer)
-			// Check for special keys BEFORE passing to table
-			if matchKey(msg, m.config.Keys.Exit) {
-				m.showPopup = false
-				m.tableFilterInput.Blur()
-				m.tableFilterInput.SetValue("")
-				m.popupTable = m.popupTable.WithFilterInputValue("")
-				return m, nil
-			} else if msg.String() == "a" {
-				m.showActionPopup = true
+			// Table popup (outer layer) - Esc handled by stack
+			if msg.String() == "a" {
+				m.openActionPopup()
 				return m, nil
 			} else if matchKey(msg, m.config.Keys.Filter) {
 				m.tableFilterActive = true
 				m.tableFilterInput.Focus()
-				// Don't clear value so user can refine filter
 				return m, textinput.Blink
 			} else if matchKey(msg, m.config.Keys.RowAction) {
-				// Show row action popup for highlighted row
-				m.showRowActionPopup = true
+				m.openRowActionPopup()
 				return m, nil
 			} else if matchKey(msg, m.config.Keys.Export) {
-				// Export table
-				return m, m.exportTable()
+				m.openExportPopup("export.csv")
+				return m, textinput.Blink
 			}
 
-			// Pass other keys to table for navigation, filtering, etc.
+			// Pass other keys to table for navigation
 			var cmd tea.Cmd
 			m.popupTable, cmd = m.popupTable.Update(msg)
 			return m, cmd
 		}
 
 		// Global keys
-		if msg.String() == "ctrl+c" {
+		if matchKey(msg, m.config.Keys.Quit) {
 			return m, tea.Quit
 		}
 
 		// Tab key toggles schema browser
-		if msg.String() == "tab" && m.mode == VisualMode {
+		if matchKey(msg, m.config.Keys.ToggleSchema) && m.mode == VisualMode {
 			m.schemaBrowser = m.schemaBrowser.Toggle()
 			if m.schemaBrowser.IsVisible() && m.driver != nil {
 				return m, schemabrowser.LoadSchemaCmd(m.driver)
 			}
+			return m, nil
+		}
+
+		// ? key toggles help popup (only when no other popups are visible)
+		if matchKey(msg, m.config.Keys.Help) && !m.hasOpenPopup() {
+			m.openHelpPopup()
+			return m, nil
+		}
+
+		// P key shows profile selector (reconnect)
+		if matchKey(msg, m.config.Keys.ShowProfiles) && m.mode == VisualMode {
+			if m.driver != nil {
+				m.driver.Close()
+				m.driver = nil
+			}
+			m.appState = StateSelectingProfile
+			m.reloadProfiles()
 			return m, nil
 		}
 
@@ -523,9 +824,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			keyStr := msg.String()
-
-			if keyStr == "ctrl+space" {
+			if matchKey(msg, m.config.Keys.Autocomplete) {
 				m.autocompleting = true
 				m = m.updateSuggestions()
 				if len(m.tables) == 0 && !m.loadingTables {
@@ -550,7 +849,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Scroll to bottom handled by history update
 				}
 				return m, tea.Batch(cmds...)
-			} else if keyStr == "ctrl+z" {
+			} else if matchKey(msg, m.config.Keys.Explain) {
+				query := strings.TrimSpace(m.editor.Value())
+				if query != "" && m.driver != nil {
+					explainQuery := "EXPLAIN " + query
+					if m.driver.Type() == db.SQLite {
+						explainQuery = "EXPLAIN QUERY PLAN " + query
+					}
+					m.loading = true
+					cmds = append(cmds, m.executeQueryCmd(explainQuery))
+				}
+				return m, tea.Batch(cmds...)
+			} else if matchKey(msg, m.config.Keys.Undo) {
 				if len(m.undoStack) > 0 {
 					// Push current to redo
 					m.redoStack = append(m.redoStack, m.editor.Value())
@@ -560,7 +870,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.SetValue(prev)
 				}
 				return m, nil
-			} else if keyStr == "ctrl+y" {
+			} else if matchKey(msg, m.config.Keys.Redo) {
 				if len(m.redoStack) > 0 {
 					// Push current to undo
 					m.undoStack = append(m.undoStack, m.editor.Value())
@@ -570,7 +880,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.SetValue(next)
 				}
 				return m, nil
-			} else if matchKey(msg, m.config.Keys.Exit) {
+			} else if matchKey(msg, m.config.Keys.Exit) || msg.String() == "esc" {
 				m.mode = VisualMode
 				m.editor.Blur()
 				if len(m.history) > 0 {
@@ -592,18 +902,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.autocompleting = false
 				m.suggestions = nil
 				m.debounceID++ // Cancel pending callbacks
-				return m, tea.Batch(cmds...)
-			}
-
-			// 2. Slash Commands: Immediate
-			if strings.HasPrefix(val, "/") {
-				m = m.updateSlashSuggestions()
-				if len(m.suggestions) > 0 {
-					m.autocompleting = true
-				} else {
-					m.autocompleting = false
-				}
-				m.debounceID++ // Cancel pending SQL callbacks
 				return m, tea.Batch(cmds...)
 			}
 
@@ -635,22 +933,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-
-	case schemabrowser.SchemaLoadedMsg:
-		if msg.Err != nil {
-			m.errorMsg = fmt.Sprintf("Schema load failed: %v", msg.Err)
-		} else {
-			m.tables = msg.Tables
-			m.columns = msg.Columns
-		}
-		m.loadingTables = false
-		if m.autocompleting {
-			m = m.updateSuggestions()
-		}
-		// Also pass to schema browser component
-		var cmd tea.Cmd
-		m.schemaBrowser, cmd = m.schemaBrowser.Update(msg)
-		return m, cmd
 
 	case PagerFinishedMsg:
 		if msg.Err != nil {
@@ -685,13 +967,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, m.openPager(msg.Result)
 					}
 					// No pager - show popup with full result table
-					m.popupEntry = msg.Entry
-					m.popupResult = msg.Result
-					// Create table without width constraints for scrolling
 					m.popupTable = eztable.FromQueryResult(msg.Result, 0).
 						Focused(true)
 					m.updatePopupTable()
-					m.showPopup = true
+					m.openResultsPopup(msg.Entry, msg.Result)
+					m.expandedID = msg.Entry.ID // Expand the history entry as well
 				} else {
 					// Non-SELECT (INSERT, UPDATE, DELETE) - expand with preview
 					m.expandedID = msg.Entry.ID
@@ -706,6 +986,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.updateHistoryViewport()
 		// Scroll viewport to bottom to show new entry
 		m.viewport.GotoBottom()
+		m = m.ensureSelectionVisible()
 		return m, nil
 
 	case HistoryLoadedMsg:
@@ -733,13 +1014,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RerunResultMsg:
 		m.loading = false
 		if msg.Err == nil {
-			m.popupEntry = msg.Entry
-			m.popupResult = msg.Result
 			// Create table without width constraints for scrolling
 			m.popupTable = eztable.FromQueryResult(msg.Result, 0).
 				Focused(true)
 			m.updatePopupTable()
-			m.showPopup = true
+			m.openResultsPopup(msg.Entry, msg.Result)
 		} else {
 			m.errorMsg = msg.Err.Error()
 		}
@@ -749,7 +1028,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.errorMsg = fmt.Sprintf("Export failed: %v", msg.Err)
 		} else {
-			m = m.addSystemMessage(fmt.Sprintf("Exported to: %s", msg.Path))
+			m.statusMsg = fmt.Sprintf("Exported to: %s", msg.Path)
 		}
 		return m, nil
 	}
@@ -766,20 +1045,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleVisualMode handles keys in visual mode
 func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// switch msg.String() {
-	keyStr := msg.String()
-
-	if keyStr == "i" {
+	if matchKey(msg, m.config.Keys.InsertMode) {
 		m.mode = InsertMode
 		m.editor.Focus()
 		// Ensure cursor is at end?
 		return m, textinput.Blink
-	} else if keyStr == "k" || keyStr == "up" { // Move up (older)
+	} else if matchKey(msg, m.config.Keys.MoveUp) { // Move up (older)
 		if m.selected > 0 {
 			m.selected--
 			m = m.ensureSelectionVisible()
 		}
-	} else if keyStr == "j" || keyStr == "down" { // Move down (newer)
+	} else if matchKey(msg, m.config.Keys.MoveDown) { // Move down (newer)
 		if m.selected < len(m.history)-1 {
 			m.selected++
 			m = m.ensureSelectionVisible()
@@ -792,16 +1068,16 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.expandedID != 0 {
 			m.expandedTable = m.expandedTable.ScrollRight()
 		}
-	} else if keyStr == "g" {
+	} else if matchKey(msg, m.config.Keys.GoTop) {
 		// For simplicity, single 'g' goes to top (gg would require state tracking)
 		m.selected = 0
 		m = m.ensureSelectionVisible()
-	} else if keyStr == "G" {
+	} else if matchKey(msg, m.config.Keys.GoBottom) {
 		if len(m.history) > 0 {
 			m.selected = len(m.history) - 1
 			m = m.ensureSelectionVisible()
 		}
-	} else if keyStr == "enter" || keyStr == "space" { // Toggle expansion
+	} else if matchKey(msg, m.config.Keys.ToggleExpand) { // Toggle expansion
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			if m.expandedID == entry.ID {
@@ -816,7 +1092,7 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Re-calculate visibility after expansion change
 			m = m.ensureSelectionVisible()
 		}
-	} else if keyStr == "r" { // Re-run selected query
+	} else if matchKey(msg, m.config.Keys.Rerun) { // Re-run selected query
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			if m.strictMode && isModifyingQuery(entry.Query) {
@@ -827,11 +1103,11 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, m.executeQueryCmd(entry.Query)
 		}
-	} else if keyStr == "t" { // Toggle strict mode
+	} else if matchKey(msg, m.config.Keys.ToggleStrict) { // Toggle strict mode
 		m.strictMode = !m.strictMode
 		m.errorMsg = "" // Clear error if toggling
 		return m, nil
-	} else if keyStr == "e" { // Edit selected query
+	} else if matchKey(msg, m.config.Keys.Edit) { // Edit selected query
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			m.editor.SetValue(entry.Query)
@@ -839,7 +1115,7 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.editor.Focus()
 			return m, textinput.Blink
 		}
-	} else if keyStr == "x" { // Delete selected query
+	} else if matchKey(msg, m.config.Keys.Delete) { // Delete selected query
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			m.historyStore.Delete(entry.ID)
@@ -849,7 +1125,7 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m = m.ensureSelectionVisible()
 		}
-	} else if keyStr == "y" { // Copy selected query to clipboard
+	} else if matchKey(msg, m.config.Keys.Copy) { // Copy selected query to clipboard
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			return m, m.copyToClipboardCmd(entry.Query)
@@ -860,7 +1136,7 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.SetValue("")
 		m.searchInput.Focus()
 		return m, textinput.Blink
-	} else if keyStr == "tab" { // Toggle schema browser
+	} else if matchKey(msg, m.config.Keys.ToggleSchema) { // Toggle schema browser
 		m.schemaBrowser = m.schemaBrowser.Toggle()
 		if m.schemaBrowser.IsVisible() && m.driver != nil {
 			sb, sbCmd := m.schemaBrowser.StartLoading()
@@ -885,32 +1161,49 @@ func (m Model) View() string {
 		if m.appState == StateConnecting {
 			// Show connecting status
 			connectingStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#8BE9FD")).
+				Foreground(AccentColor()).
 				Bold(true)
 			status := connectingStyle.Render("Connecting to " + m.profile.Name + "...")
 			view = lipgloss.JoinVertical(lipgloss.Center, view, status)
 		}
 		if m.connectError != "" {
-			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+			errorStyle := lipgloss.NewStyle().Foreground(ErrorColor())
 			view = lipgloss.JoinVertical(lipgloss.Center, view, errorStyle.Render("Error: "+m.connectError))
 		}
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, view)
 	}
 
-	// 1. Render Components
+	// 1. Calculate dynamic editor height based on content
+	// Count lines in editor content
+	editorContent := m.editor.Value()
+	lineCount := strings.Count(editorContent, "\n") + 1
+
+	// Min 3 lines, max half viewport
+	minHeight := 3
+	maxHeight := m.height / 2
+	if maxHeight < minHeight {
+		maxHeight = minHeight
+	}
+
+	editorHeight := lineCount
+	if editorHeight < minHeight {
+		editorHeight = minHeight
+	}
+	if editorHeight > maxHeight {
+		editorHeight = maxHeight
+	}
+
+	m.editor.SetHeight(editorHeight)
+
+	// 2. Render Components
 	inputWidth := m.width - 4
 	inputView := InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
-
-	var suggestionsView string
-	if m.autocompleting {
-		suggestionsView = m.renderSuggestions()
-	}
 
 	statusBar := m.renderStatusBar()
 	helpText := m.renderHelp()
 
 	// 2. Calculate Content Height
-	chromeHeight := lipgloss.Height(statusBar) + lipgloss.Height(helpText) + lipgloss.Height(inputView) + lipgloss.Height(suggestionsView)
+	chromeHeight := lipgloss.Height(statusBar) + lipgloss.Height(helpText) + lipgloss.Height(inputView)
 	availableHeight := m.height - chromeHeight
 	if availableHeight < 0 {
 		availableHeight = 0
@@ -928,7 +1221,6 @@ func (m Model) View() string {
 	// 4. Final Layout
 	main := lipgloss.JoinVertical(lipgloss.Left,
 		historyView,
-		suggestionsView,
 		inputView,
 		statusBar,
 		helpText,
@@ -937,6 +1229,90 @@ func (m Model) View() string {
 	// Overlay popups if active
 	if m.showPopup || m.confirming {
 		main = m.renderPopupOverlay(main)
+	}
+
+	// Help popup overlay
+	if m.showHelpPopup {
+		main = m.renderHelpPopup(main)
+	}
+
+	// Template popup overlay
+	if m.showTemplatePopup {
+		main = m.renderTemplatePopup(main)
+	}
+
+	// Import popup overlay
+	if m.showImportPopup {
+		main = m.renderImportPopup(main)
+	}
+
+	// Theme Selector Overlay
+	if m.themeSelector.Visible() {
+		themeView := m.themeSelector.View(m.width, m.height)
+		main = overlay.Composite(themeView, main, overlay.Center, overlay.Center, 0, 0)
+	}
+
+	// 5. Suggestions Overlay
+	if m.autocompleting && m.mode == InsertMode {
+		suggestions := m.renderSuggestions()
+		if suggestions != "" {
+			// Calculate position relative to input area
+			// Input input is at the bottom, above status bar and help text
+			// Y = height - (StatusBar + Help + InputHeight) + 1 (border)
+			// Actually, we want it *above* the input line
+			// Input is at: m.height - (StatusBar=1 + Help=1 + InputHeight)
+			// So bottom of suggestions should be at top of input?
+			// Or below? Standard is usually below, but if we are at bottom of screen, maybe above?
+			// Given the layout, the input bar is fixed at the bottom.
+			// So suggestions should appear *above* the input box.
+
+			// Let's try absolute positioning from bottom-left anchor
+			// Input area is at bottom.
+			// cursor Col gives X offset roughly.
+			// Use lipgloss.Width to measure text before cursor
+			cursorLine := m.editor.Line()
+			lines := strings.Split(m.editor.Value(), "\n")
+			var lineContent string
+			if cursorLine < len(lines) {
+				lineContent = lines[cursorLine]
+			}
+			x := lipgloss.Width(lineContent) + 2 // +2 for border/padding
+
+			// Y: The overlay package coordinates are 0-indexed from top-left.
+			// Input box bottom is at m.height - (StatusBar + Help)
+			// Input box top is at m.height - (StatusBar + Help + EditorHeight + Border)
+			// We want suggestions to appear *above* the current line of text in the editor?
+			// Or below? Standard is usually below, but if we are at bottom of screen, maybe above?
+			// Given the layout, the input bar is fixed at the bottom.
+			// So suggestions should appear *above* the input box.
+
+			inputHeight := lipgloss.Height(inputView)
+			bottomOffset := 2 + inputHeight // Status(1) + Help(1) + Input
+
+			// We want to position the suggestions box such that its bottom is at (Height - bottomOffset)
+			// overlay.Composite places (0,0) of overlay at (x,y) of bg.
+			// So y = m.height - bottomOffset - suggestionHeight
+
+			suggestionHeight := lipgloss.Height(suggestions)
+			y := m.height - bottomOffset - suggestionHeight
+
+			if y < 0 {
+				y = 0
+			} // Clamp to top
+
+			// X position
+			// Constrain to width
+			suggestionWidth := lipgloss.Width(suggestions)
+			if x+suggestionWidth > m.width {
+				x = m.width - suggestionWidth
+			}
+
+			// Use 0 (Left/Top) for absolute positioning with offsets
+			// Assuming overlay.Left and overlay.Top constants exist, or 0/0 works
+			// Existing code used overlay.Center, so assuming standardized naming
+			// If Left/Top don't exist, we might need another approach, but let's try this.
+			main = overlay.Composite(suggestions, main, 0, 0, x, y)
+		}
 	}
 
 	if m.schemaBrowser.IsVisible() || m.loadingTables { // Show if visible OR loading (for spinner)
@@ -971,27 +1347,38 @@ func (m Model) renderStatusBar() string {
 			dbInfo = fmt.Sprintf(" sqlite:%s ", m.profile.Database)
 		}
 
-		parts = append(parts, profileInfo+lipgloss.NewStyle().Background(lipgloss.Color("#282A36")).Foreground(lipgloss.Color("#F8F8F2")).Render(dbInfo))
+		parts = append(parts, profileInfo+lipgloss.NewStyle().Background(CardBg()).Foreground(TextPrimary()).Render(dbInfo))
 	} else {
 		parts = append(parts, ConnectionStyle.Render(" NO PROFILE "))
 	}
 
 	// 3. Strict Mode
 	if m.strictMode {
-		parts = append(parts, lipgloss.NewStyle().Background(lipgloss.Color("#FFB86C")).Foreground(lipgloss.Color("#000000")).Padding(0, 1).Bold(true).Render(" STRICT "))
+		parts = append(parts, lipgloss.NewStyle().Background(WarningColor()).Foreground(BgPrimary()).Padding(0, 1).Bold(true).Render(" STRICT "))
 	}
 
 	// 4. Loading indicator
 	if m.loading {
 		spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		frame := spinner[int(time.Now().UnixMilli()/100)%len(spinner)]
-		loadingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#8BE9FD")).Padding(0, 1)
+		loadingStyle := lipgloss.NewStyle().Foreground(AccentColor()).Padding(0, 1)
 		parts = append(parts, loadingStyle.Render(frame+" Running..."))
+	} else if m.loadingTables {
+		spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		frame := spinner[int(time.Now().UnixMilli()/100)%len(spinner)]
+		loadingStyle := lipgloss.NewStyle().Foreground(HighlightColor()).Padding(0, 1)
+		parts = append(parts, loadingStyle.Render(frame+" Loading schema..."))
 	}
 
-	// 4. Error indicator
+	// 5. Status message (success/info)
+	if m.statusMsg != "" {
+		statusStyle := lipgloss.NewStyle().Background(SuccessColor()).Foreground(BgPrimary()).Padding(0, 1)
+		parts = append(parts, statusStyle.Render("✓ "+m.statusMsg))
+	}
+
+	// 6. Error indicator
 	if m.errorMsg != "" {
-		errorStyle := lipgloss.NewStyle().Background(lipgloss.Color("#FF5555")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
+		errorStyle := lipgloss.NewStyle().Background(ErrorColor()).Foreground(TextPrimary()).Padding(0, 1)
 		truncated := m.errorMsg
 		if len(truncated) > 40 {
 			truncated = truncated[:37] + "..."
@@ -1012,6 +1399,23 @@ func (m Model) renderHelp() string {
 }
 
 func (m Model) updateHistoryViewport() Model {
+	// Calculate dynamic editor height
+	editorContent := m.editor.Value()
+	lineCount := strings.Count(editorContent, "\n") + 1
+	minHeight := 3
+	maxHeight := m.height / 2
+	if maxHeight < minHeight {
+		maxHeight = minHeight
+	}
+	editorHeight := lineCount
+	if editorHeight < minHeight {
+		editorHeight = minHeight
+	}
+	if editorHeight > maxHeight {
+		editorHeight = maxHeight
+	}
+	m.editor.SetHeight(editorHeight)
+
 	// Status bar
 	statusBar := m.renderStatusBar()
 	// Help
@@ -1019,19 +1423,14 @@ func (m Model) updateHistoryViewport() Model {
 	// Input area
 	inputWidth := m.width - 4
 	inputView := InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
-	// Suggestions
-	var suggestionsView string
-	if m.autocompleting {
-		suggestionsView = m.renderSuggestions()
-	}
-
+	// Suggestions (only in insert mode)
 	chromeHeight := lipgloss.Height(statusBar) + lipgloss.Height(helpText)
 	availableHeight := m.height - chromeHeight
 	if availableHeight < 0 {
 		availableHeight = 0
 	}
 
-	historyHeight := availableHeight - lipgloss.Height(inputView) - lipgloss.Height(suggestionsView)
+	historyHeight := availableHeight - lipgloss.Height(inputView)
 	if historyHeight < 0 {
 		historyHeight = 0
 	}
@@ -1055,16 +1454,20 @@ func (m *Model) updatePopupTable() {
 		availableHeight = 3
 	}
 
-	// Table width should fit within terminal with room for popup borders and padding
-	// Aggressive margin (30) to absolutely ensure no overflow
-	maxTableWidth := m.width - 30
-	if maxTableWidth < 40 {
-		maxTableWidth = 40
+	// Table width should fit within popup (which is m.width - 10)
+	// Account for popup padding (4) + borders (4) + table borders (2)
+	popupWidth := m.width - 10
+	if popupWidth < 60 {
+		popupWidth = 60
 	}
+	maxTableWidth := popupWidth - 10 // Extra margin for borders and padding
 
+	// Use WithMaxTotalWidth for proper horizontal scrolling (like bubble-table example)
+	// WithHorizontalFreezeColumnCount(1) keeps first column visible when scrolling
 	m.popupTable = m.popupTable.
 		WithPageSize(availableHeight).
-		WithTargetWidth(maxTableWidth)
+		WithMaxTotalWidth(maxTableWidth).
+		WithHorizontalFreezeColumnCount(1)
 }
 
 func (m Model) selectRowAsQuery() (Model, tea.Cmd) {
@@ -1099,7 +1502,7 @@ func (m Model) selectRowAsQuery() (Model, tea.Cmd) {
 		}
 		if !found {
 			// Log full debug info to file since UI might truncate it
-			f, _ := os.OpenFile("debug_metadata.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, _ := os.OpenFile("debug_metadata.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			if f != nil {
 				fmt.Fprintf(f, "Timestamp: %s\nTable: %s\nLoaded Tables Count: %d\nColumns found for table: %v\nAll tables: %v\n\n",
 					time.Now(), tableName, len(m.tables), m.columns[tableName], m.tables)
@@ -1170,6 +1573,33 @@ func (m Model) selectRowAsQuery() (Model, tea.Cmd) {
 	return m, nil
 }
 
+// viewFullRow displays all columns and values for the highlighted row
+func (m Model) viewFullRow() (Model, tea.Cmd) {
+	highlightedRow := m.popupTable.HighlightedRow()
+	if highlightedRow.Data == nil || m.popupResult == nil {
+		return m, nil
+	}
+
+	// Build formatted view of all row data
+	var content strings.Builder
+	content.WriteString("-- Row Details --\n")
+
+	for _, col := range m.popupResult.Columns {
+		if val, ok := highlightedRow.Data[col]; ok {
+			val = unwrapCellValue(val)
+			content.WriteString(fmt.Sprintf("%s: %v\n", col, val))
+		}
+	}
+
+	// Put the row details in the editor for viewing/copying
+	m.editor.SetValue(content.String())
+	m.showPopup = false
+	m.showRowActionPopup = false
+	m.mode = InsertMode
+
+	return m, nil
+}
+
 // unwrapCellValue extracts the raw value from a bubble-table StyledCell if necessary
 // Since StyledCell fields might be unexported or hard to access, we use a robust string check
 func unwrapCellValue(val interface{}) interface{} {
@@ -1185,6 +1615,137 @@ func unwrapCellValue(val interface{}) interface{} {
 		return strings.TrimSuffix(s, "}")
 	}
 	return val
+}
+
+// Popup stack helper methods
+
+// openHelpPopup opens the help popup and pushes closer to stack
+func (m *Model) openHelpPopup() {
+	if m.showHelpPopup {
+		return
+	}
+	m.showHelpPopup = true
+	m.popupStack.Push("help", func() bool {
+		m.showHelpPopup = false
+		return true
+	})
+}
+
+// openTemplatePopup opens template popup for a table
+func (m *Model) openTemplatePopup(tableName string) {
+	if m.showTemplatePopup {
+		return
+	}
+	m.showTemplatePopup = true
+	m.templateTable = tableName
+	m.templateIdx = 0
+	m.popupStack.Push("template", func() bool {
+		m.showTemplatePopup = false
+		m.templateTable = ""
+		m.templateIdx = 0
+		return true
+	})
+}
+
+// openResultsPopup opens the results popup
+func (m *Model) openResultsPopup(entry *history.HistoryEntry, result *db.QueryResult) {
+	if m.showPopup {
+		return
+	}
+	m.popupEntry = entry
+	m.popupResult = result
+	m.showPopup = true
+	m.popupStack.Push("results", func() bool {
+		m.showPopup = false
+		m.tableFilterInput.Blur()
+		m.tableFilterInput.SetValue("")
+		m.popupTable = m.popupTable.WithFilterInputValue("")
+		return true
+	})
+}
+
+// openRowActionPopup opens row action popup
+func (m *Model) openRowActionPopup() {
+	if m.showRowActionPopup {
+		return
+	}
+	m.showRowActionPopup = true
+	m.popupStack.Push("rowAction", func() bool {
+		m.showRowActionPopup = false
+		return true
+	})
+}
+
+// openExportPopup opens export popup
+func (m *Model) openExportPopup(defaultName string) {
+	if m.showExportPopup {
+		return
+	}
+	m.showExportPopup = true
+	m.exportInput.SetValue(defaultName)
+	m.exportInput.Focus()
+	m.popupStack.Push("export", func() bool {
+		m.showExportPopup = false
+		m.exportInput.Blur()
+		return true
+	})
+}
+
+// openImportPopup opens import popup for a table
+func (m *Model) openImportPopup(tableName string) {
+	if m.showImportPopup {
+		return
+	}
+	m.showImportPopup = true
+	m.importInput.SetValue("")
+	m.importInput.Focus()
+	m.importTable = tableName
+	m.popupStack.Push("import", func() bool {
+		m.showImportPopup = false
+		m.importInput.Blur()
+		m.importTable = ""
+		return true
+	})
+}
+
+// openActionPopup opens action menu popup
+func (m *Model) openActionPopup() {
+	if m.showActionPopup {
+		return
+	}
+	m.showActionPopup = true
+	m.popupStack.Push("action", func() bool {
+		m.showActionPopup = false
+		return true
+	})
+}
+
+// openThemeSelector opens theme selector popup
+func (m *Model) openThemeSelector() {
+	if m.themeSelector.Visible() {
+		return
+	}
+	m.themeSelector = m.themeSelector.Show()
+	m.popupStack.Push("theme", func() bool {
+		m.themeSelector = m.themeSelector.Hide()
+		return true
+	})
+}
+
+// closeTopPopup closes the topmost popup using the stack
+func (m *Model) closeTopPopup() bool {
+	if m.popupStack == nil {
+		return false
+	}
+	return m.popupStack.CloseTop()
+}
+
+// hasOpenPopup returns true if any popup is open
+func (m *Model) hasOpenPopup() bool {
+	if m.popupStack == nil {
+		return false
+	}
+	return !m.popupStack.IsEmpty()
 }
 
 // reloadProfiles updates the profile selector with current config

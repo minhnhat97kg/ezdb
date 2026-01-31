@@ -260,13 +260,13 @@ func (m *Model) renderItem(i int) string {
 	var iconStyle lipgloss.Style
 	switch item.Status() {
 	case "error":
-		statusIcon = "✘"
+		statusIcon = ""
 		iconStyle = m.styles.ErrorIcon
 	case "info":
-		statusIcon = "ℹ"
+		statusIcon = ""
 		iconStyle = m.styles.InfoIcon
 	default:
-		statusIcon = "✔"
+		statusIcon = ""
 		iconStyle = m.styles.SuccessIcon
 	}
 

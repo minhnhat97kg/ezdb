@@ -9,16 +9,23 @@ import (
 	"github.com/adrg/xdg"
 )
 
+// QueryTemplate defines a predefined query with <table> placeholder
+type QueryTemplate struct {
+	Name  string `toml:"name"`
+	Query string `toml:"query"`
+}
+
 // Config represents the application configuration
 type Config struct {
-	DefaultProfile     string            `toml:"default_profile"`
-	PageSize           int               `toml:"page_size"`
-	HistoryPreviewRows int               `toml:"history_preview_rows"`
-	Pager              string            `toml:"pager"`
-	Profiles           []Profile         `toml:"profiles"`
-	Commands           map[string]string `toml:"commands"`
-	Theme              Theme             `toml:"theme_colors"`
-	Keys               KeyMap            `toml:"keys"`
+	DefaultProfile     string          `toml:"default_profile"`
+	PageSize           int             `toml:"page_size"`
+	HistoryPreviewRows int             `toml:"history_preview_rows"`
+	Pager              string          `toml:"pager"`
+	Profiles           []Profile       `toml:"profiles"`
+	ThemeName          string          `toml:"theme_name"`
+	Theme              Theme           `toml:"theme_colors"`
+	Keys               KeyMap          `toml:"keys"`
+	QueryTemplates     []QueryTemplate `toml:"query_templates"`
 }
 
 // Theme defines the color palette
@@ -34,10 +41,14 @@ type Theme struct {
 	BgPrimary     string `toml:"bg_primary"`
 	BgSecondary   string `toml:"bg_secondary"`
 	CardBg        string `toml:"card_bg"`
+	PopupBg       string `toml:"popup_bg"`
+	BorderColor   string `toml:"border_color"`
+	SelectedBg    string `toml:"selected_bg"`
 }
 
 // KeyMap defines key bindings
 type KeyMap struct {
+	// Existing keys
 	Execute     []string `toml:"execute"`
 	Exit        []string `toml:"exit"`
 	Filter      []string `toml:"filter"`
@@ -48,6 +59,29 @@ type KeyMap struct {
 	RowAction   []string `toml:"row_action"`
 	Export      []string `toml:"export"`
 	Sort        []string `toml:"sort"`
+	ToggleTheme []string `toml:"toggle_theme"`
+	// Navigation keys
+	InsertMode   []string `toml:"insert_mode"`
+	MoveUp       []string `toml:"move_up"`
+	MoveDown     []string `toml:"move_down"`
+	GoTop        []string `toml:"go_top"`
+	GoBottom     []string `toml:"go_bottom"`
+	ToggleExpand []string `toml:"toggle_expand"`
+	// Action keys
+	Rerun        []string `toml:"rerun"`
+	Edit         []string `toml:"edit"`
+	Delete       []string `toml:"delete"`
+	Copy         []string `toml:"copy"`
+	ToggleStrict []string `toml:"toggle_strict"`
+	ToggleSchema []string `toml:"toggle_schema"`
+	ShowProfiles []string `toml:"show_profiles"`
+	Help         []string `toml:"help"`
+	Explain      []string `toml:"explain"`
+	// Modifier keys
+	Autocomplete []string `toml:"autocomplete"`
+	Undo         []string `toml:"undo"`
+	Redo         []string `toml:"redo"`
+	Quit         []string `toml:"quit"`
 }
 
 // Profile represents a database connection profile
@@ -74,6 +108,8 @@ type Profile struct {
 	EncryptedSSHPassword string `toml:"ssh_password,omitempty"`
 }
 
+const defaultHistoryFile = "history.txt"
+
 // DefaultConfig returns a config with default values
 func DefaultConfig() *Config {
 	return &Config{
@@ -82,32 +118,65 @@ func DefaultConfig() *Config {
 		HistoryPreviewRows: 3,
 		Pager:              "",
 		Profiles:           []Profile{},
-		Commands:           make(map[string]string),
+		ThemeName:          "JetBrains Darcula",
 		Theme: Theme{
-			// Nord Theme Defaults
-			TextPrimary:   "#D8DEE9",
-			TextSecondary: "#81A1C1",
-			TextFaint:     "#4C566A",
-			Accent:        "#88C0D0",
-			Success:       "#A3BE8C",
-			Error:         "#BF616A",
-			Highlight:     "#8FBCBB",
-			Warning:       "#D08770",
-			BgPrimary:     "#2E3440",
-			BgSecondary:   "#3B4252",
-			CardBg:        "#434C5E",
+			// JetBrains Darcula Theme
+			TextPrimary:   "#A9B7C6", // Default foreground
+			TextSecondary: "#6897BB", // Blue (numbers, etc)
+			TextFaint:     "#6272A4", // Comments/faint
+			Accent:        "#CC7832", // Orange (keywords)
+			Success:       "#6A8759", // Green (strings)
+			Error:         "#FF6B68", // Red
+			Highlight:     "#9876AA", // Purple (types)
+			Warning:       "#FFC66D", // Yellow
+			BgPrimary:     "#2B2B2B", // Background
+			BgSecondary:   "#3C3F41", // Selection/secondary
+			CardBg:        "#313335", // Tool window
+			PopupBg:       "#1E1E1E", // Popup background
+			BorderColor:   "#5E5E5E", // Borders
+			SelectedBg:    "#214283", // Selection
 		},
 		Keys: KeyMap{
+			// Existing keys
 			Execute:     []string{"ctrl+d"},
-			Exit:        []string{"esc", "ctrl+c", "q"},
+			Exit:        []string{"esc", "q"},
 			Filter:      []string{"/"},
 			NextPage:    []string{"n", "pgdown"},
 			PrevPage:    []string{"b", "pgup"},
 			ScrollLeft:  []string{"h", "left"},
 			ScrollRight: []string{"l", "right"},
 			RowAction:   []string{"enter", "space"},
-			Export:      []string{"e"},
+			Export:      []string{"ctrl+e"},
 			Sort:        []string{"s"},
+			ToggleTheme: []string{"t"},
+			// Navigation keys
+			InsertMode:   []string{"i"},
+			MoveUp:       []string{"k", "up"},
+			MoveDown:     []string{"j", "down"},
+			GoTop:        []string{"g"},
+			GoBottom:     []string{"G"},
+			ToggleExpand: []string{"enter", "space"},
+			// Action keys
+			Rerun:        []string{"r"},
+			Edit:         []string{"e"},
+			Delete:       []string{"x"},
+			Copy:         []string{"y"},
+			ToggleStrict: []string{"m"},
+			ToggleSchema: []string{"tab"},
+			ShowProfiles: []string{"P"},
+			Help:         []string{"?"},
+			Explain:      []string{"X"},
+			// Modifier keys
+			Autocomplete: []string{"ctrl+space"},
+			Undo:         []string{"ctrl+z"},
+			Redo:         []string{"ctrl+y"},
+			Quit:         []string{"ctrl+c"},
+		},
+		QueryTemplates: []QueryTemplate{
+			{Name: "SELECT 10", Query: "SELECT * FROM <table> LIMIT 10"},
+			{Name: "SELECT 100", Query: "SELECT * FROM <table> LIMIT 100"},
+			{Name: "COUNT", Query: "SELECT COUNT(*) FROM <table>"},
+			{Name: "DESCRIBE", Query: "DESCRIBE <table>"},
 		},
 	}
 }
@@ -146,8 +215,144 @@ func Load() (*Config, error) {
 		cfg.Theme = defaults.Theme
 		updated = true
 	}
+	// Migrate new theme colors
+	if cfg.Theme.PopupBg == "" {
+		cfg.Theme.PopupBg = defaults.Theme.PopupBg
+		cfg.Theme.BorderColor = defaults.Theme.BorderColor
+		cfg.Theme.SelectedBg = defaults.Theme.SelectedBg
+		updated = true
+	}
+
+	// Migrate existing keys
 	if len(cfg.Keys.Execute) == 0 {
-		cfg.Keys = defaults.Keys
+		cfg.Keys.Execute = defaults.Keys.Execute
+		updated = true
+	}
+	if len(cfg.Keys.Exit) == 0 {
+		cfg.Keys.Exit = defaults.Keys.Exit
+		updated = true
+	}
+	if len(cfg.Keys.RowAction) == 0 {
+		cfg.Keys.RowAction = defaults.Keys.RowAction
+		updated = true
+	}
+	if len(cfg.Keys.Filter) == 0 {
+		cfg.Keys.Filter = defaults.Keys.Filter
+		updated = true
+	}
+	if len(cfg.Keys.Export) == 0 {
+		cfg.Keys.Export = defaults.Keys.Export
+		updated = true
+	}
+	if len(cfg.Keys.NextPage) == 0 {
+		cfg.Keys.NextPage = defaults.Keys.NextPage
+		updated = true
+	}
+	if len(cfg.Keys.PrevPage) == 0 {
+		cfg.Keys.PrevPage = defaults.Keys.PrevPage
+		updated = true
+	}
+	if len(cfg.Keys.ScrollLeft) == 0 {
+		cfg.Keys.ScrollLeft = defaults.Keys.ScrollLeft
+		updated = true
+	}
+	if len(cfg.Keys.ScrollRight) == 0 {
+		cfg.Keys.ScrollRight = defaults.Keys.ScrollRight
+		updated = true
+	}
+	if len(cfg.Keys.Sort) == 0 {
+		cfg.Keys.Sort = defaults.Keys.Sort
+		updated = true
+	}
+	if len(cfg.Keys.ToggleTheme) == 0 {
+		cfg.Keys.ToggleTheme = defaults.Keys.ToggleTheme
+		updated = true
+	}
+	// Migrate new keys individually
+	if len(cfg.Keys.InsertMode) == 0 {
+		cfg.Keys.InsertMode = defaults.Keys.InsertMode
+		updated = true
+	}
+	if len(cfg.Keys.MoveUp) == 0 {
+		cfg.Keys.MoveUp = defaults.Keys.MoveUp
+		updated = true
+	}
+	if len(cfg.Keys.MoveDown) == 0 {
+		cfg.Keys.MoveDown = defaults.Keys.MoveDown
+		updated = true
+	}
+	if len(cfg.Keys.GoTop) == 0 {
+		cfg.Keys.GoTop = defaults.Keys.GoTop
+		updated = true
+	}
+	if len(cfg.Keys.GoBottom) == 0 {
+		cfg.Keys.GoBottom = defaults.Keys.GoBottom
+		updated = true
+	}
+	if len(cfg.Keys.ToggleExpand) == 0 {
+		cfg.Keys.ToggleExpand = defaults.Keys.ToggleExpand
+		updated = true
+	}
+	if len(cfg.Keys.Rerun) == 0 {
+		cfg.Keys.Rerun = defaults.Keys.Rerun
+		updated = true
+	}
+	if len(cfg.Keys.Edit) == 0 {
+		cfg.Keys.Edit = defaults.Keys.Edit
+		updated = true
+	}
+	if len(cfg.Keys.Delete) == 0 {
+		cfg.Keys.Delete = defaults.Keys.Delete
+		updated = true
+	}
+	if len(cfg.Keys.Copy) == 0 {
+		cfg.Keys.Copy = defaults.Keys.Copy
+		updated = true
+	}
+	if len(cfg.Keys.ToggleStrict) == 0 {
+		cfg.Keys.ToggleStrict = defaults.Keys.ToggleStrict
+		updated = true
+	}
+	if len(cfg.Keys.ToggleSchema) == 0 {
+		cfg.Keys.ToggleSchema = defaults.Keys.ToggleSchema
+		updated = true
+	}
+	if len(cfg.Keys.ShowProfiles) == 0 {
+		cfg.Keys.ShowProfiles = defaults.Keys.ShowProfiles
+		updated = true
+	}
+	if len(cfg.Keys.Autocomplete) == 0 {
+		cfg.Keys.Autocomplete = defaults.Keys.Autocomplete
+		updated = true
+	}
+	if len(cfg.Keys.Undo) == 0 {
+		cfg.Keys.Undo = defaults.Keys.Undo
+		updated = true
+	}
+	if len(cfg.Keys.Redo) == 0 {
+		cfg.Keys.Redo = defaults.Keys.Redo
+		updated = true
+	}
+	if len(cfg.Keys.Quit) == 0 {
+		cfg.Keys.Quit = defaults.Keys.Quit
+		updated = true
+	}
+	if len(cfg.Keys.Help) == 0 {
+		cfg.Keys.Help = defaults.Keys.Help
+		updated = true
+	}
+	if len(cfg.Keys.Explain) == 0 {
+		cfg.Keys.Explain = defaults.Keys.Explain
+		updated = true
+	}
+
+	if len(cfg.QueryTemplates) == 0 {
+		cfg.QueryTemplates = []QueryTemplate{
+			{Name: "SELECT 100", Query: "SELECT * FROM <table> LIMIT 100"},
+			{Name: "COUNT", Query: "SELECT COUNT(*) FROM <table>"},
+			{Name: "DESCRIBE", Query: "DESCRIBE <table>"},
+			{Name: "INSERT DEFAULT", Query: "INSERT INTO <table> DEFAULT VALUES"},
+		}
 		updated = true
 	}
 

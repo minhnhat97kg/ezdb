@@ -98,6 +98,7 @@ func FromQueryResult(res *db.QueryResult, maxWidth int) bbtable.Model {
 		WithPageSize(20).
 		WithMinimumHeight(20). // Fixed height to prevent shrinking on last page
 		WithKeyMap(keys).
+		Filtered(true).
 		WithFilterInputValue("")
 }
 

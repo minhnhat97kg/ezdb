@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/config"
 )
 
 // State represents the component state
@@ -73,39 +74,31 @@ type Styles struct {
 }
 
 // DefaultStyles returns the default styling using Nord palette
-func DefaultStyles() Styles {
-	// Nord color palette (matching OpenCode)
-	textPrimary := lipgloss.Color("#D8DEE9")    // Nord4: Light gray
-	textFaint := lipgloss.Color("#4C566A")      // Nord3: Dark gray
-	accentColor := lipgloss.Color("#88C0D0")    // Nord8: Cyan blue
-	successColor := lipgloss.Color("#A3BE8C")   // Nord14: Green
-	highlightColor := lipgloss.Color("#8FBCBB") // Nord7: Teal
-	bgPrimary := lipgloss.Color("#2E3440")      // Nord0: Very dark blue
-
+func DefaultStyles(theme config.Theme) Styles {
 	return Styles{
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(highlightColor). // Nord7: Teal border
+			BorderForeground(lipgloss.Color(theme.Highlight)).
 			Padding(1, 2),
 		// No Background - transparent, inherits from terminal
 		Title: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(textPrimary). // Nord4: Light gray
+			Foreground(lipgloss.Color(theme.TextPrimary)).
 			MarginBottom(1),
 		Item: lipgloss.NewStyle().
-			Foreground(textPrimary). // Nord4: Light gray
+			Foreground(lipgloss.Color(theme.TextPrimary)).
 			PaddingLeft(2),
 		Selected: lipgloss.NewStyle().
-			Foreground(bgPrimary).    // Nord0: Dark text
-			Background(successColor). // Nord14: Green highlight
+			Foreground(lipgloss.Color(theme.BgPrimary)).
+			Background(lipgloss.Color(theme.Success)).
 			Bold(true).
 			PaddingLeft(2),
 		Hint: lipgloss.NewStyle().
-			Foreground(textFaint). // Nord3: Dark gray
+			Foreground(lipgloss.Color(theme.TextFaint)).
 			Italic(true).
 			MarginTop(1),
 		PasswordLabel: lipgloss.NewStyle().
-			Foreground(accentColor). // Nord8: Cyan
+			Foreground(lipgloss.Color(theme.Accent)).
 			Bold(true),
 	}
 }
@@ -177,7 +170,7 @@ type Model struct {
 }
 
 // New creates a new selector
-func New(profiles []Profile) Model {
+func New(profiles []Profile, theme config.Theme) Model {
 	// Password input (prompt)
 	ti := textinput.New()
 	ti.Placeholder = "Enter password..."
@@ -214,7 +207,7 @@ func New(profiles []Profile) Model {
 		sshPasswordInput: newInput("SSH Password (optional)", 30),
 
 		formFocused: 0,
-		styles:      DefaultStyles(),
+		styles:      DefaultStyles(theme),
 	}
 }
 

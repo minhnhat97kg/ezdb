@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/config"
 )
 
 // Styles for the suggestions dropdown
@@ -17,19 +18,19 @@ type Styles struct {
 }
 
 // DefaultStyles returns default styling
-func DefaultStyles() Styles {
+func DefaultStyles(theme config.Theme) Styles {
 	return Styles{
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#6272A4")).
+			BorderForeground(lipgloss.Color(theme.TextFaint)).
 			Padding(0, 1),
 		Item: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2")),
+			Foreground(lipgloss.Color(theme.TextPrimary)),
 		Selected: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#282A36")).
-			Background(lipgloss.Color("#8BE9FD")),
+			Foreground(lipgloss.Color(theme.BgPrimary)).
+			Background(lipgloss.Color(theme.Highlight)),
 		Loading: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
+			Foreground(lipgloss.Color(theme.TextFaint)).
 			Italic(true),
 	}
 }
@@ -45,14 +46,14 @@ type Model struct {
 }
 
 // New creates a new suggestions model
-func New() Model {
+func New(theme config.Theme) Model {
 	return Model{
 		items:    []string{},
 		selected: 0,
 		visible:  false,
 		loading:  false,
 		maxShow:  5,
-		styles:   DefaultStyles(),
+		styles:   DefaultStyles(theme),
 	}
 }
 

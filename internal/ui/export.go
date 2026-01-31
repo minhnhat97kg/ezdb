@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -18,42 +17,57 @@ type ExportCompleteMsg struct {
 	Err  error
 }
 
-// exportTable exports the currently displayed table data to a file
-func (m Model) exportTable() tea.Cmd {
+// exportTableToPath exports all query results to a specified path
+func (m Model) exportTableToPath(filename string) tea.Cmd {
 	if m.popupResult == nil {
 		return nil
 	}
 
+	// Capture result data for the closure
+	columns := m.popupResult.Columns
+	rows := m.popupResult.Rows
+
 	return func() tea.Msg {
-		// Generate filename with timestamp
-		timestamp := time.Now().Format("20060102_150405")
-		filename := fmt.Sprintf("export_%s_%s.csv", m.popupEntry.ProfileName, timestamp)
-		filepath := filepath.Join(os.TempDir(), filename)
+		// Expand path
+		exportPath := filename
+		if !filepath.IsAbs(exportPath) {
+			cwd, err := os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
+			exportPath = filepath.Join(cwd, filename)
+		}
+
+		// Ensure .csv extension
+		if !strings.HasSuffix(strings.ToLower(exportPath), ".csv") {
+			exportPath += ".csv"
+		}
 
 		// Create file
-		f, err := os.Create(filepath)
+		f, err := os.Create(exportPath)
 		if err != nil {
 			return ExportCompleteMsg{Err: err}
 		}
 		defer f.Close()
 
-		// Write CSV
+		// Write CSV with | separator
 		w := csv.NewWriter(f)
+		w.Comma = '|'
 		defer w.Flush()
 
 		// Write header
-		if err := w.Write(m.popupResult.Columns); err != nil {
+		if err := w.Write(columns); err != nil {
 			return ExportCompleteMsg{Err: err}
 		}
 
-		// Write rows
-		for _, row := range m.popupResult.Rows {
+		// Write ALL rows
+		for _, row := range rows {
 			if err := w.Write(row); err != nil {
 				return ExportCompleteMsg{Err: err}
 			}
 		}
 
-		return ExportCompleteMsg{Path: filepath}
+		return ExportCompleteMsg{Path: exportPath}
 	}
 }
 

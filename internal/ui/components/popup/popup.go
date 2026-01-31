@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/config"
 )
 
 // Styles for the popup
@@ -18,19 +19,19 @@ type Styles struct {
 }
 
 // DefaultStyles returns default styling
-func DefaultStyles() Styles {
+func DefaultStyles(theme config.Theme) Styles {
 	return Styles{
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#BD93F9")).
+			BorderForeground(lipgloss.Color(theme.Highlight)).
 			Padding(1, 2),
 		Header: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#F8F8F2")),
+			Foreground(lipgloss.Color(theme.TextPrimary)),
 		Body: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#F8F8F2")),
+			Foreground(lipgloss.Color(theme.TextPrimary)),
 		Footer: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#6272A4")).
+			Foreground(lipgloss.Color(theme.TextFaint)).
 			Italic(true),
 	}
 }
@@ -52,11 +53,11 @@ type Model struct {
 }
 
 // New creates a new popup model
-func New() Model {
+func New(theme config.Theme) Model {
 	return Model{
 		visible:  false,
 		maxWidth: 120,
-		styles:   DefaultStyles(),
+		styles:   DefaultStyles(theme),
 	}
 }
 

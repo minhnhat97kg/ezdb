@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	// Colors
+	// Colors (exported via getter functions below)
 	textPrimary   lipgloss.Color
 	textSecondary lipgloss.Color
 	textFaint     lipgloss.Color
@@ -21,6 +21,9 @@ var (
 	bgPrimary   lipgloss.Color
 	bgSecondary lipgloss.Color
 	cardBg      lipgloss.Color
+	popupBg     lipgloss.Color
+	borderColor lipgloss.Color
+	selectedBg  lipgloss.Color
 
 	// Styles
 	StatusBarStyle          lipgloss.Style
@@ -44,6 +47,22 @@ var (
 	PopupStyle              lipgloss.Style
 )
 
+// Color getter functions for use in components
+func TextPrimary() lipgloss.Color    { return textPrimary }
+func TextSecondary() lipgloss.Color  { return textSecondary }
+func TextFaint() lipgloss.Color      { return textFaint }
+func AccentColor() lipgloss.Color    { return accentColor }
+func SuccessColor() lipgloss.Color   { return successColor }
+func ErrorColor() lipgloss.Color     { return errorColor }
+func HighlightColor() lipgloss.Color { return highlightColor }
+func WarningColor() lipgloss.Color   { return warningColor }
+func BgPrimary() lipgloss.Color      { return bgPrimary }
+func BgSecondary() lipgloss.Color    { return bgSecondary }
+func CardBg() lipgloss.Color         { return cardBg }
+func PopupBg() lipgloss.Color        { return popupBg }
+func BorderColor() lipgloss.Color    { return borderColor }
+func SelectedBg() lipgloss.Color     { return selectedBg }
+
 // InitStyles initializes the global styles based on the provided configuration theme
 func InitStyles(theme config.Theme) {
 	// Initialize Colors
@@ -60,6 +79,9 @@ func InitStyles(theme config.Theme) {
 	bgPrimary = lipgloss.Color(theme.BgPrimary)
 	bgSecondary = lipgloss.Color(theme.BgSecondary)
 	cardBg = lipgloss.Color(theme.CardBg)
+	popupBg = lipgloss.Color(theme.PopupBg)
+	borderColor = lipgloss.Color(theme.BorderColor)
+	selectedBg = lipgloss.Color(theme.SelectedBg)
 
 	// Initialize Styles
 	StatusBarStyle = lipgloss.NewStyle().
@@ -108,7 +130,7 @@ func InitStyles(theme config.Theme) {
 	SuggestionBoxStyle = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(textFaint).
-		Background(bgSecondary).
+		// Background(bgPrimary).
 		Padding(0, 1)
 
 	SuggestionItemStyle = lipgloss.NewStyle().

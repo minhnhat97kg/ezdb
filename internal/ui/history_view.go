@@ -51,9 +51,9 @@ func (m Model) renderHistoryItem(i int) string {
 
 	// Query Line with syntax highlighting
 	if entry.Status != "info" {
-		indicator := "▸ "
+		indicator := " "
 		if isExpanded {
-			indicator = "▾ "
+			indicator = " "
 		}
 		headerContent.WriteString(indicator)
 	}
@@ -77,11 +77,11 @@ func (m Model) renderHistoryItem(i int) string {
 	headerContent.WriteString("\n")
 
 	// Meta Line - plain text for consistent background
-	statusIcon := "✔"
+	statusIcon := ""
 	if entry.Status == "error" {
-		statusIcon = "✘"
+		statusIcon = ""
 	} else if entry.Status == "info" {
-		statusIcon = "ℹ"
+		statusIcon = ""
 	}
 
 	var metaInfo string
@@ -93,8 +93,8 @@ func (m Model) renderHistoryItem(i int) string {
 	headerContent.WriteString(metaInfo)
 
 	// Apply full-width background to entire header section
-	// Using Nord3 for better contrast
-	headerBg := lipgloss.Color("#232426") // Nord3: Noticeably lighter
+	// Using cardBg for better contrast
+	headerBg := cardBg
 
 	headerStyle := lipgloss.NewStyle().
 		Background(headerBg).
@@ -107,7 +107,7 @@ func (m Model) renderHistoryItem(i int) string {
 		headerStyle = headerStyle.
 			BorderLeft(true).
 			BorderStyle(lipgloss.ThickBorder()).
-			BorderForeground(lipgloss.Color("#88C0D0")). // Nord8: Cyan
+			BorderForeground(accentColor). // Global accent
 			PaddingLeft(1)
 	}
 

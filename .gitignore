@@ -44,7 +44,6 @@ debug_metadata.log
 schema_loader_debug.log
 
 # Binary
-ezdb
 ezdb_debug
 
 # Test databases

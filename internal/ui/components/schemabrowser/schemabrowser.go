@@ -40,6 +40,21 @@ type SchemaLoadedMsg struct {
 	Err         error
 }
 
+// TableSelectedMsg is sent when a table is selected for template
+type TableSelectedMsg struct {
+	TableName string
+}
+
+// ExportTableMsg is sent when a table export is requested
+type ExportTableMsg struct {
+	TableName string
+}
+
+// ImportTableMsg is sent when a table import is requested
+type ImportTableMsg struct {
+	TableName string
+}
+
 // Styles for the browser
 type Styles struct {
 	Container     lipgloss.Style
@@ -318,6 +333,48 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.viewport.YOffset = 0
 				m.viewport.SetContent(m.renderContent())
 			}
+		case "t": // Template quick query
+			var tableName string
+			if m.state == StateTables && len(m.tables) > 0 {
+				tableName = m.tables[m.selectedIdx]
+			} else if m.state == StateColumns {
+				tableName = m.selectedTable
+			}
+
+			if tableName != "" {
+				m.visible = false
+				return m, func() tea.Msg {
+					return TableSelectedMsg{TableName: tableName}
+				}
+			}
+		case "e": // Export table
+			var tableName string
+			if m.state == StateTables && len(m.tables) > 0 {
+				tableName = m.tables[m.selectedIdx]
+			} else if m.state == StateColumns {
+				tableName = m.selectedTable
+			}
+
+			if tableName != "" {
+				m.visible = false
+				return m, func() tea.Msg {
+					return ExportTableMsg{TableName: tableName}
+				}
+			}
+		case "o": // Import (open) data into table
+			var tableName string
+			if m.state == StateTables && len(m.tables) > 0 {
+				tableName = m.tables[m.selectedIdx]
+			} else if m.state == StateColumns {
+				tableName = m.selectedTable
+			}
+
+			if tableName != "" {
+				m.visible = false
+				return m, func() tea.Msg {
+					return ImportTableMsg{TableName: tableName}
+				}
+			}
 		case "enter":
 			if m.state == StateTables && len(m.tables) > 0 {
 				m.selectedTable = m.tables[m.selectedIdx]
@@ -381,6 +438,12 @@ func (m Model) ensureSelectionVisible() Model {
 	return m
 }
 
+// SetStyles sets custom styles
+func (m Model) SetStyles(s Styles) Model {
+	m.styles = s
+	return m
+}
+
 // View renders the browser popup
 func (m Model) View() string {
 	if !m.visible && !m.loading {
@@ -398,9 +461,9 @@ func (m Model) View() string {
 
 	popupWidth, popupHeight := m.getPopupSize()
 
-	title := "📂 Tables"
+	title := " Tables"
 	if m.state == StateColumns {
-		title = "📋 Table: " + m.selectedTable
+		title = " Table: " + m.selectedTable
 	}
 	view.WriteString(m.styles.Title.Render(title))
 	view.WriteString("\n")
@@ -413,19 +476,29 @@ func (m Model) View() string {
 		if m.activeTab == TabColumns {
 			colStyle = m.styles.TabActive
 		}
-		tabs = append(tabs, colStyle.Render("Columns"))
+		tabs = append(tabs, colStyle.Render(" Columns"))
 		conStyle := m.styles.TabInactive
 		if m.activeTab == TabConstraints {
 			conStyle = m.styles.TabActive
 		}
-		tabs = append(tabs, conStyle.Render("Constraints"))
+		tabs = append(tabs, conStyle.Render(" Constraints"))
 
 		view.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, tabs...))
 		view.WriteString("\n\n")
 	}
 
 	m.viewport.SetContent(m.renderContent())
+	m.viewport.SetContent(m.renderContent())
 	view.WriteString(m.viewport.View())
+
+	// Help footer
+	view.WriteString("\n")
+	view.WriteString(lipgloss.NewStyle().Faint(true).Render("enter: details • t: template • e: export • o: import"))
+	if m.state == StateColumns {
+		view.WriteString(lipgloss.NewStyle().Faint(true).Render(" • l/h: tabs • esc: back"))
+	} else {
+		view.WriteString(lipgloss.NewStyle().Faint(true).Render(" • tab: close"))
+	}
 
 	return m.styles.Container.
 		Width(popupWidth).
@@ -455,7 +528,7 @@ func (m Model) renderContent() string {
 			prefix := "  "
 			if i == m.selectedIdx {
 				style = m.styles.ItemActive
-				prefix = "▸ "
+				prefix = " "
 			}
 			content.WriteString(style.Render(prefix + table))
 			content.WriteString("\n")

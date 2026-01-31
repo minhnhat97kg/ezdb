@@ -1,0 +1,87 @@
+package config
+
+// GetThemes returns the list of available themes
+func GetThemes() map[string]Theme {
+	return map[string]Theme{
+		"JetBrains Darcula": {
+			TextPrimary:   "#A9B7C6",
+			TextSecondary: "#6897BB",
+			TextFaint:     "#6272A4",
+			Accent:        "#CC7832",
+			Success:       "#6A8759",
+			Error:         "#FF6B68",
+			Highlight:     "#9876AA",
+			Warning:       "#FFC66D",
+			BgPrimary:     "#2B2B2B",
+			BgSecondary:   "#3C3F41",
+			CardBg:        "#313335",
+			PopupBg:       "#1E1E1E", // Darker for popups
+			BorderColor:   "#5E5E5E",
+			SelectedBg:    "#214283",
+		},
+		"Nord": {
+			TextPrimary:   "#D8DEE9",
+			TextSecondary: "#88C0D0",
+			TextFaint:     "#4C566A",
+			Accent:        "#81A1C1",
+			Success:       "#A3BE8C",
+			Error:         "#BF616A",
+			Highlight:     "#B48EAD",
+			Warning:       "#EBCB8B",
+			BgPrimary:     "#2E3440",
+			BgSecondary:   "#3B4252",
+			CardBg:        "#434C5E",
+			PopupBg:       "#2E3440",
+			BorderColor:   "#4C566A",
+			SelectedBg:    "#434C5E",
+		},
+		"Gruvbox Dark": {
+			TextPrimary:   "#EBDBB2",
+			TextSecondary: "#83A598",
+			TextFaint:     "#928374",
+			Accent:        "#FE8019", // Orange
+			Success:       "#B8BB26",
+			Error:         "#FB4934",
+			Highlight:     "#D3869B", // Purple
+			Warning:       "#FABD2F",
+			BgPrimary:     "#282828",
+			BgSecondary:   "#3C3836",
+			CardBg:        "#504945",
+			PopupBg:       "#32302F",
+			BorderColor:   "#665C54",
+			SelectedBg:    "#504945",
+		},
+		"Monokai": {
+			TextPrimary:   "#F8F8F2",
+			TextSecondary: "#66D9EF",
+			TextFaint:     "#75715E",
+			Accent:        "#FD971F",
+			Success:       "#A6E22E",
+			Error:         "#F92672",
+			Highlight:     "#AE81FF",
+			Warning:       "#E6DB74",
+			BgPrimary:     "#272822",
+			BgSecondary:   "#3E3D32",
+			CardBg:        "#49483E",
+			PopupBg:       "#1E1F1C",
+			BorderColor:   "#75715E",
+			SelectedBg:    "#49483E",
+		},
+		"Tokyo Night": {
+			TextPrimary:   "#C0CAF5",
+			TextSecondary: "#7AA2F7",
+			TextFaint:     "#565F89",
+			Accent:        "#FF9E64",
+			Success:       "#9ECE6A",
+			Error:         "#F7768E",
+			Highlight:     "#BB9AF7",
+			Warning:       "#E0AF68",
+			BgPrimary:     "#1A1B26",
+			BgSecondary:   "#24283B",
+			CardBg:        "#414868",
+			PopupBg:       "#16161E",
+			BorderColor:   "#565F89",
+			SelectedBg:    "#283457", // Slightly lighter blue
+		},
+	}
+}
