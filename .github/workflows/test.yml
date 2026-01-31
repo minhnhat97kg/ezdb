@@ -1,0 +1,70 @@
+name: Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.23', '1.24']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install SQLite3 dev (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Build
+        env:
+          CGO_ENABLED: 1
+        run: go build -v ./...
+
+      - name: Test
+        env:
+          CGO_ENABLED: 1
+        run: go test -v ./...
+
+      - name: Verify binary
+        env:
+          CGO_ENABLED: 1
+        run: |
+          go build -o ezdb ./cmd/ezdb
+          ./ezdb --help || true
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install SQLite3 dev
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
