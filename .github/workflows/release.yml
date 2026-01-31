@@ -19,10 +19,6 @@ jobs:
             goarch: amd64
           - goos: linux
             goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
 
     steps:
       - name: Checkout
@@ -57,10 +53,6 @@ jobs:
           # Skip CGO cross-compile for now (use native builds)
           if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
             go build -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" -o "$output" ./cmd/ezdb
-          elif [ "${{ matrix.goos }}" = "darwin" ]; then
-            # Darwin builds need macOS runner, skip for now
-            echo "Skipping Darwin build on Linux runner"
-            touch "$output"
           else
             # For arm64 linux, build without CGO for now
             CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" -o "$output" ./cmd/ezdb || touch "$output"
