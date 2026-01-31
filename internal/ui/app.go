@@ -1406,6 +1406,14 @@ func (m Model) renderHelp() string {
 		return keyStyle.Render(key) + descStyle.Render(" "+desc)
 	}
 
+	// Helper to get first key or fallback
+	key := func(bindings []string, fallback string) string {
+		if len(bindings) > 0 {
+			return bindings[0]
+		}
+		return fallback
+	}
+
 	sep := sepStyle.Render("  ")
 
 	keys := m.config.Keys
@@ -1415,27 +1423,27 @@ func (m Model) renderHelp() string {
 
 	if m.mode == InsertMode {
 		hints = append(hints,
-			hint(keys.Execute[0], "Run"),
-			hint(keys.Explain[0], "Explain"),
-			hint("esc", "Visual"),
-			hint(keys.Autocomplete[0], "Complete"),
+			hint(key(keys.Execute, "ctrl+d"), "Run"),
+			hint(key(keys.Explain, "X"), "Explain"),
+			hint(key(keys.Exit, "esc"), "Visual"),
+			hint(key(keys.Autocomplete, "ctrl+space"), "Complete"),
 		)
 	} else {
 		// Visual mode
 		hints = append(hints,
-			hint(keys.InsertMode[0], "Insert"),
-			hint(keys.MoveUp[0]+"/"+keys.MoveDown[0], "Nav"),
-			hint(keys.ToggleExpand[0], "Expand"),
-			hint(keys.Rerun[0], "Rerun"),
-			hint(keys.Edit[0], "Edit"),
-			hint(keys.ToggleSchema[0], "Schema"),
+			hint(key(keys.InsertMode, "i"), "Insert"),
+			hint(key(keys.MoveUp, "k")+"/"+key(keys.MoveDown, "j"), "Nav"),
+			hint(key(keys.ToggleExpand, "enter"), "Expand"),
+			hint(key(keys.Rerun, "r"), "Rerun"),
+			hint(key(keys.Edit, "e"), "Edit"),
+			hint(key(keys.ToggleSchema, "tab"), "Schema"),
 		)
 	}
 
 	// Always show help and quit
 	hints = append(hints,
-		hint(keys.Help[0], "Help"),
-		hint(keys.Quit[0], "Quit"),
+		hint(key(keys.Help, "?"), "Help"),
+		hint(key(keys.Quit, "ctrl+c"), "Quit"),
 	)
 
 	return strings.Join(hints, sep)
