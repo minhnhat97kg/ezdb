@@ -146,7 +146,7 @@ func DefaultConfig() *Config {
 			ScrollLeft:  []string{"h", "left"},
 			ScrollRight: []string{"l", "right"},
 			RowAction:   []string{"enter", "space"},
-			Export:      []string{"ctrl+e"},
+			Export:      []string{"e"},
 			Sort:        []string{"s"},
 			ToggleTheme: []string{"t"},
 			// Navigation keys

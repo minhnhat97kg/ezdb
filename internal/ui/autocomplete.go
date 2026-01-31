@@ -82,9 +82,9 @@ var (
 
 // SQLContext represents the parsed context of a SQL statement
 type SQLContext struct {
-	StatementType string   // SELECT, INSERT, UPDATE, DELETE, etc.
-	LastKeyword   string   // Most recent keyword before cursor
-	Tables        []string // Tables referenced in the query (with aliases)
+	StatementType string            // SELECT, INSERT, UPDATE, DELETE, etc.
+	LastKeyword   string            // Most recent keyword before cursor
+	Tables        []string          // Tables referenced in the query (with aliases)
 	TableAliases  map[string]string // alias -> table name
 	InSelect      bool
 	InFrom        bool
@@ -96,8 +96,8 @@ type SQLContext struct {
 	InInsert      bool
 	InUpdate      bool
 	InSet         bool
-	AfterDot      bool     // After a "." for qualified names
-	Qualifier     string   // Table/alias before the dot
+	AfterDot      bool   // After a "." for qualified names
+	Qualifier     string // Table/alias before the dot
 }
 
 // ParseSQLContext analyzes SQL text up to cursor position to determine context
@@ -653,7 +653,7 @@ func (m Model) renderSuggestions() string {
 		prefix := "  "
 		if i == m.suggestionIdx {
 			style = SuggestionSelectedStyle
-			prefix = "> "
+			prefix = " ▶ "
 		}
 
 		// Add type indicator

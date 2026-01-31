@@ -118,6 +118,6 @@ func (m ThemeSelector) View(w, h int) string {
 		content += style.Render(prefix+name) + "\n"
 	}
 
-	m.popup = m.popup.Show("Select Theme", content, "Enter: Select • Esc: Cancel")
+	m.popup = m.popup.Show("Select Theme", content, "Enter: Select • Esc: Cancel • ?: Help")
 	return m.popup.View()
 }

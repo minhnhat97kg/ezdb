@@ -493,7 +493,7 @@ func (m Model) View() string {
 
 	// Help footer
 	view.WriteString("\n")
-	view.WriteString(lipgloss.NewStyle().Faint(true).Render("enter: details • t: template • e: export • o: import"))
+	view.WriteString(lipgloss.NewStyle().Faint(true).Render("enter: details • t: template • e: export • o: import • ?: help"))
 	if m.state == StateColumns {
 		view.WriteString(lipgloss.NewStyle().Faint(true).Render(" • l/h: tabs • esc: back"))
 	} else {

@@ -65,8 +65,25 @@ func (m Model) renderResultsPopup(main string) string {
 		content.WriteString(m.tableFilterInput.View())
 	} else {
 		content.WriteString("\n\n")
-		shortcuts := lipgloss.NewStyle().Faint(true).Render(
-			"n/b:page • h/l:scroll • /:filter • enter:actions • e:export • q:close")
+
+		// Helper to get key string
+		k := func(keys []string, def string) string {
+			if len(keys) > 0 {
+				return keys[0]
+			}
+			return def
+		}
+
+		shortcutsStr := fmt.Sprintf("%s/%s:page • %s/%s:scroll • %s:filter • %s:actions • %s:export • %s:close • %s:help",
+			k(m.config.Keys.NextPage, "n"), k(m.config.Keys.PrevPage, "b"),
+			k(m.config.Keys.ScrollLeft, "h"), k(m.config.Keys.ScrollRight, "l"),
+			k(m.config.Keys.Filter, "/"),
+			k(m.config.Keys.RowAction, "enter"),
+			k(m.config.Keys.Export, "ctrl+e"),
+			k(m.config.Keys.Exit, "q"),
+			k(m.config.Keys.Help, "?"))
+
+		shortcuts := lipgloss.NewStyle().Faint(true).Render(shortcutsStr)
 		content.WriteString(shortcuts)
 	}
 

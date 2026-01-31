@@ -67,39 +67,106 @@ func (p *Profile) BuildDSN(password string) string {
 type Styles struct {
 	Box           lipgloss.Style
 	Title         lipgloss.Style
+	Subtitle      lipgloss.Style
 	Item          lipgloss.Style
+	ItemName      lipgloss.Style
+	ItemType      lipgloss.Style
+	ItemHost      lipgloss.Style
+	ItemSSH       lipgloss.Style
 	Selected      lipgloss.Style
+	SelectedName  lipgloss.Style
+	SelectedType  lipgloss.Style
+	SelectedHost  lipgloss.Style
 	Hint          lipgloss.Style
+	HintKey       lipgloss.Style
 	PasswordLabel lipgloss.Style
+	SectionTitle  lipgloss.Style
+	FieldLabel    lipgloss.Style
+	FieldLabelAct lipgloss.Style
+	StatusSuccess lipgloss.Style
+	StatusError   lipgloss.Style
+	Divider       lipgloss.Style
+	ProfileIcon   lipgloss.Style
+	MenuIcon      lipgloss.Style
 }
 
-// DefaultStyles returns the default styling using Nord palette
+// DefaultStyles returns the default styling
 func DefaultStyles(theme config.Theme) Styles {
 	return Styles{
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(theme.Highlight)).
-			Padding(1, 2),
-		// No Background - transparent, inherits from terminal
+			Padding(1, 3).
+			Width(70),
 		Title: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color(theme.TextPrimary)).
+			Foreground(lipgloss.Color(theme.Accent)).
 			MarginBottom(1),
-		Item: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(theme.TextPrimary)).
-			PaddingLeft(2),
-		Selected: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(theme.BgPrimary)).
-			Background(lipgloss.Color(theme.Success)).
-			Bold(true).
-			PaddingLeft(2),
-		Hint: lipgloss.NewStyle().
+		Subtitle: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.TextFaint)).
 			Italic(true).
+			MarginBottom(1),
+		Item: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextSecondary)).
+			PaddingLeft(2).
+			MarginBottom(0),
+		ItemName: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextPrimary)).
+			Bold(true),
+		ItemType: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Highlight)).
+			Italic(true),
+		ItemHost: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextFaint)),
+		ItemSSH: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Warning)),
+		Selected: lipgloss.NewStyle().
+			Background(lipgloss.Color(theme.SelectedBg)).
+			PaddingLeft(2).
+			PaddingRight(2).
+			MarginBottom(0),
+		SelectedName: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Success)).
+			Bold(true),
+		SelectedType: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Highlight)),
+		SelectedHost: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextSecondary)),
+		Hint: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextFaint)).
 			MarginTop(1),
+		HintKey: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextPrimary)).
+			Background(lipgloss.Color(theme.CardBg)).
+			Padding(0, 1).
+			Bold(true),
 		PasswordLabel: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.Accent)).
 			Bold(true),
+		SectionTitle: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Highlight)).
+			Bold(true).
+			MarginTop(1).
+			MarginBottom(1),
+		FieldLabel: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextFaint)).
+			Width(14),
+		FieldLabelAct: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Accent)).
+			Bold(true).
+			Width(14),
+		StatusSuccess: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Success)).
+			Bold(true),
+		StatusError: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Error)).
+			Bold(true),
+		Divider: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.BorderColor)),
+		ProfileIcon: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Accent)),
+		MenuIcon: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Success)),
 	}
 }
 
@@ -561,7 +628,7 @@ func (m Model) View() string {
 		}
 
 		b.WriteString("\n")
-		b.WriteString(m.styles.Hint.Render("↑/↓: Navigate  Enter: Select  Esc: Back"))
+		b.WriteString(m.styles.Hint.Render("↑/↓: Navigate  Enter: Select  Esc: Back  ?: Help"))
 	} else {
 		// Profile selection view
 		b.WriteString(m.styles.Title.Render("Select Connection Profile"))
@@ -587,7 +654,7 @@ func (m Model) View() string {
 			b.WriteString("\n")
 		}
 
-		b.WriteString(m.styles.Hint.Render("↑/↓: Navigate  Enter: Select  m: Manage  q: Quit"))
+		b.WriteString(m.styles.Hint.Render("↑/↓: Navigate  Enter: Select  m: Manage  q: Quit  ?: Help"))
 	}
 
 	// Show status message if set

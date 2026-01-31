@@ -542,6 +542,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showImportPopup || m.showExportPopup || m.showRowActionPopup || m.showActionPopup ||
 			m.themeSelector.Visible()
 		if hasPopup && isExitKey {
+			f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			fmt.Fprintf(f, "Exit key pressed. Stack len: %d. Top: %s\n", m.popupStack.Len(), m.popupStack.TopName())
+			f.Close()
 			// Try stack first
 			if m.closeTopPopup() {
 				return m, nil
@@ -606,6 +609,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Theme selector handling
 		if m.themeSelector.Visible() {
+			if matchKey(msg, m.config.Keys.Help) {
+				m.openHelpPopup()
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.themeSelector, cmd = m.themeSelector.Update(msg)
 			// If theme selector closed itself (e.g., via enter), pop from stack
@@ -617,6 +624,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Profile selector handling
 		if m.appState == StateSelectingProfile {
+			if matchKey(msg, m.config.Keys.Help) {
+				m.openHelpPopup()
+				return m, nil
+			}
 			var cmd tea.Cmd
 			m.profileSelector, cmd = m.profileSelector.Update(msg)
 			return m, cmd
@@ -674,6 +685,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Export popup (innermost layer) - Esc handled by stack
+		if m.showExportPopup {
+			if msg.String() == "enter" {
+				filename := m.exportInput.Value()
+				if filename == "" {
+					filename = "export.csv"
+				}
+				m.popupStack.Pop() // Remove export from stack
+				m.showExportPopup = false
+				m.exportInput.Blur()
+				if m.exportTable != "" {
+					m.loading = true
+					return m, m.exportTableCmd(m.exportTable, filename)
+				}
+				return m, m.exportTableToPath(filename)
+			}
+			var cmd tea.Cmd
+			m.exportInput, cmd = m.exportInput.Update(msg)
+			return m, cmd
+		}
+
 		// Popup handling (results table popup)
 		if m.showPopup {
 			// Handle filter input if active
@@ -686,27 +718,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.tableFilterInput, cmd = m.tableFilterInput.Update(msg)
 				m.popupTable = m.popupTable.WithFilterInputValue(m.tableFilterInput.Value())
-				return m, cmd
-			}
-
-			// Export popup (innermost layer) - Esc handled by stack
-			if m.showExportPopup {
-				if msg.String() == "enter" {
-					filename := m.exportInput.Value()
-					if filename == "" {
-						filename = "export.csv"
-					}
-					m.popupStack.Pop() // Remove export from stack
-					m.showExportPopup = false
-					m.exportInput.Blur()
-					if m.exportTable != "" {
-						m.loading = true
-						return m, m.exportTableCmd(m.exportTable, filename)
-					}
-					return m, m.exportTableToPath(filename)
-				}
-				var cmd tea.Cmd
-				m.exportInput, cmd = m.exportInput.Update(msg)
 				return m, cmd
 			}
 
@@ -751,6 +762,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if matchKey(msg, m.config.Keys.Export) {
 				m.openExportPopup("export.csv")
 				return m, textinput.Blink
+			} else if matchKey(msg, m.config.Keys.Help) {
+				m.openHelpPopup()
+				return m, nil
 			}
 
 			// Pass other keys to table for navigation
@@ -1031,6 +1045,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Exported to: %s", msg.Path)
 		}
 		return m, nil
+
+	case ExportTableCompleteMsg:
+		m.loading = false
+		if msg.Err != nil {
+			m.errorMsg = fmt.Sprintf("Export failed: %v", msg.Err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Exported %d rows to %s", msg.Rows, msg.Filename)
+		}
+		return m, nil
 	}
 
 	// Update editor if in insert mode
@@ -1231,11 +1254,6 @@ func (m Model) View() string {
 		main = m.renderPopupOverlay(main)
 	}
 
-	// Help popup overlay
-	if m.showHelpPopup {
-		main = m.renderHelpPopup(main)
-	}
-
 	// Template popup overlay
 	if m.showTemplatePopup {
 		main = m.renderTemplatePopup(main)
@@ -1244,6 +1262,11 @@ func (m Model) View() string {
 	// Import popup overlay
 	if m.showImportPopup {
 		main = m.renderImportPopup(main)
+	}
+
+	// Export popup overlay
+	if m.showExportPopup {
+		main = m.renderExportPopup(main)
 	}
 
 	// Theme Selector Overlay
@@ -1322,6 +1345,11 @@ func (m Model) View() string {
 			// Use bubbletea-overlay to composite schema browser over main content
 			main = overlay.Composite(browser, main, overlay.Center, overlay.Center, 0, 0)
 		}
+	}
+
+	// Help popup overlay (render last to be on top)
+	if m.showHelpPopup {
+		main = m.renderHelpPopup(main)
 	}
 
 	return main
@@ -1437,6 +1465,7 @@ func (m Model) renderHelp() string {
 			hint(key(keys.Rerun, "r"), "Rerun"),
 			hint(key(keys.Edit, "e"), "Edit"),
 			hint(key(keys.ToggleSchema, "tab"), "Schema"),
+			hint(key(keys.ToggleTheme, "t"), "Theme"),
 		)
 	}
 
@@ -1675,8 +1704,12 @@ func (m *Model) openHelpPopup() {
 	if m.showHelpPopup {
 		return
 	}
+	// Add to stack so it can be closed with q/Esc
 	m.showHelpPopup = true
-	m.popupStack.Push("help", func() bool {
+	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	fmt.Fprintf(f, "Pushing help. Stack len before: %d\n", m.popupStack.Len())
+	f.Close()
+	m.popupStack.Push("help", func(m *Model) bool {
 		m.showHelpPopup = false
 		return true
 	})
@@ -1690,7 +1723,7 @@ func (m *Model) openTemplatePopup(tableName string) {
 	m.showTemplatePopup = true
 	m.templateTable = tableName
 	m.templateIdx = 0
-	m.popupStack.Push("template", func() bool {
+	m.popupStack.Push("template", func(m *Model) bool {
 		m.showTemplatePopup = false
 		m.templateTable = ""
 		m.templateIdx = 0
@@ -1706,7 +1739,10 @@ func (m *Model) openResultsPopup(entry *history.HistoryEntry, result *db.QueryRe
 	m.popupEntry = entry
 	m.popupResult = result
 	m.showPopup = true
-	m.popupStack.Push("results", func() bool {
+	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	fmt.Fprintf(f, "Pushing results. Stack len before: %d\n", m.popupStack.Len())
+	f.Close()
+	m.popupStack.Push("results", func(m *Model) bool {
 		m.showPopup = false
 		m.tableFilterInput.Blur()
 		m.tableFilterInput.SetValue("")
@@ -1721,7 +1757,7 @@ func (m *Model) openRowActionPopup() {
 		return
 	}
 	m.showRowActionPopup = true
-	m.popupStack.Push("rowAction", func() bool {
+	m.popupStack.Push("rowAction", func(m *Model) bool {
 		m.showRowActionPopup = false
 		return true
 	})
@@ -1735,7 +1771,7 @@ func (m *Model) openExportPopup(defaultName string) {
 	m.showExportPopup = true
 	m.exportInput.SetValue(defaultName)
 	m.exportInput.Focus()
-	m.popupStack.Push("export", func() bool {
+	m.popupStack.Push("export", func(m *Model) bool {
 		m.showExportPopup = false
 		m.exportInput.Blur()
 		return true
@@ -1751,7 +1787,7 @@ func (m *Model) openImportPopup(tableName string) {
 	m.importInput.SetValue("")
 	m.importInput.Focus()
 	m.importTable = tableName
-	m.popupStack.Push("import", func() bool {
+	m.popupStack.Push("import", func(m *Model) bool {
 		m.showImportPopup = false
 		m.importInput.Blur()
 		m.importTable = ""
@@ -1765,7 +1801,7 @@ func (m *Model) openActionPopup() {
 		return
 	}
 	m.showActionPopup = true
-	m.popupStack.Push("action", func() bool {
+	m.popupStack.Push("action", func(m *Model) bool {
 		m.showActionPopup = false
 		return true
 	})
@@ -1777,7 +1813,7 @@ func (m *Model) openThemeSelector() {
 		return
 	}
 	m.themeSelector = m.themeSelector.Show()
-	m.popupStack.Push("theme", func() bool {
+	m.popupStack.Push("theme", func(m *Model) bool {
 		m.themeSelector = m.themeSelector.Hide()
 		return true
 	})
@@ -1788,7 +1824,7 @@ func (m *Model) closeTopPopup() bool {
 	if m.popupStack == nil {
 		return false
 	}
-	return m.popupStack.CloseTop()
+	return m.popupStack.CloseTop(m)
 }
 
 // hasOpenPopup returns true if any popup is open

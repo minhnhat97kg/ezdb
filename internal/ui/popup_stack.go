@@ -1,7 +1,7 @@
 package ui
 
 // PopupCloser is a function that closes a popup and returns true if it was open
-type PopupCloser func() bool
+type PopupCloser func(*Model) bool
 
 // PopupStack manages a stack of popup closers for proper layered popup handling
 // When Esc/q is pressed, the topmost popup is closed first
@@ -37,12 +37,12 @@ func (s *PopupStack) Pop() PopupCloser {
 
 // CloseTop closes the topmost popup and removes it from the stack
 // Returns true if a popup was closed, false if stack was empty
-func (s *PopupStack) CloseTop() bool {
+func (s *PopupStack) CloseTop(m *Model) bool {
 	closer := s.Pop()
 	if closer == nil {
 		return false
 	}
-	return closer()
+	return closer(m)
 }
 
 // IsEmpty returns true if no popups are open
@@ -56,11 +56,11 @@ func (s *PopupStack) Len() int {
 }
 
 // Clear closes all popups and clears the stack
-func (s *PopupStack) Clear() {
-	for !s.IsEmpty() {
-		s.CloseTop()
-	}
-}
+// func (s *PopupStack) Clear() {
+// 	for !s.IsEmpty() {
+// 		s.CloseTop()
+// 	}
+// }
 
 // TopName returns the name of the topmost popup for debugging
 func (s *PopupStack) TopName() string {

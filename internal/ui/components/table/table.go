@@ -25,7 +25,8 @@ func Init(t config.Theme, k config.KeyMap) {
 func New(cols []bbtable.Column) bbtable.Model {
 	return bbtable.New(cols).
 		WithBaseStyle(lipgloss.NewStyle().
-			Foreground(lipgloss.Color(currentTheme.TextPrimary))).
+			Foreground(lipgloss.Color(currentTheme.TextPrimary)).
+			BorderForeground(lipgloss.Color(currentTheme.BorderColor))).
 		HeaderStyle(lipgloss.NewStyle().
 			Foreground(lipgloss.Color(currentTheme.Highlight)).
 			Bold(true)).
@@ -72,8 +73,8 @@ func FromQueryResult(res *db.QueryResult, maxWidth int) bbtable.Model {
 	// Custom key map for better navigation
 	keys := bbtable.DefaultKeyMap()
 	if len(currentKeys.NextPage) > 0 { // Check if initialized
-		keys.RowDown.SetKeys("j", "down") // Keep j/k hardcoded for now or add to config? Config lacks RowDown/Up.
-		keys.RowUp.SetKeys("k", "up")     // User config covers PageDown/Up, Scroll.
+		keys.RowDown.SetKeys(currentKeys.MoveDown...)
+		keys.RowUp.SetKeys(currentKeys.MoveUp...)
 
 		keys.PageDown.SetKeys(currentKeys.NextPage...)
 		keys.PageUp.SetKeys(currentKeys.PrevPage...)

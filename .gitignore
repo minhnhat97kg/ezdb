@@ -23,9 +23,6 @@
 *.sublime-workspace
 *.sublime-project
 
-# Go module cache
-go.sum
-
 # macOS specific
 .AppleDouble
 .LSOverride
