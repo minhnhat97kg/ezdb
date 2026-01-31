@@ -968,8 +968,8 @@ func (m *Model) updatePopupTable() {
 		popupWidth = 120
 	}
 	
-	// Table width = popup width - padding (2*2) - border (2) - safety (2) = -8
-	tableWidth := popupWidth - 8
+	// Table width = popup width - padding (2*2) - border (2) - safety (6) = -12
+	tableWidth := popupWidth - 12
 	if tableWidth < 10 {
 		tableWidth = 10
 	}
@@ -978,13 +978,14 @@ func (m *Model) updatePopupTable() {
 	// Window Height
 	// - Popup Margin (4)
 	// - Popup Border/Padding (4)
-	// - Header Text (~3 lines: Query, Time, Space)
-	// - Footer Text (~3 lines: Space, Space, Help)
-	// - Table Chrome (6 lines: Header 3, Footer 3)
-	// Total deduction: 4 + 4 + 3 + 3 + 6 = 20
-	availableHeight := m.height - 20
-	if availableHeight < 1 {
-		availableHeight = 1
+	// - Header Text (3 lines)
+	// - Footer Text (3 lines)
+	// - Table Chrome (~6 lines)
+	// - Safety Buffer (8 lines)
+	// Total deduction: ~28
+	availableHeight := m.height - 28
+	if availableHeight < 3 {
+		availableHeight = 3
 	}
 
 	m.popupTable = m.popupTable.
