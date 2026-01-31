@@ -7,6 +7,49 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+func (m Model) updateHistoryViewport() Model {
+	// Calculate dynamic editor height
+	editorContent := m.editor.Value()
+	lineCount := strings.Count(editorContent, "\n") + 1
+	minHeight := 3
+	maxHeight := m.height / 2
+	if maxHeight < minHeight {
+		maxHeight = minHeight
+	}
+	editorHeight := lineCount
+	if editorHeight < minHeight {
+		editorHeight = minHeight
+	}
+	if editorHeight > maxHeight {
+		editorHeight = maxHeight
+	}
+	m.editor.SetHeight(editorHeight)
+
+	// Status bar
+	statusBar := m.renderStatusBar()
+	// Help
+	helpText := m.renderHelp()
+	// Input area
+	inputWidth := m.width - 4
+	inputView := InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
+	// Suggestions (only in insert mode)
+	chromeHeight := lipgloss.Height(statusBar) + lipgloss.Height(helpText)
+	availableHeight := m.height - chromeHeight
+	if availableHeight < 0 {
+		availableHeight = 0
+	}
+
+	historyHeight := availableHeight - lipgloss.Height(inputView)
+	if historyHeight < 0 {
+		historyHeight = 0
+	}
+
+	m.viewport.Width = m.width
+	m.viewport.Height = historyHeight
+	m.viewport.SetContent(m.renderHistoryContent(historyHeight))
+	return m
+}
+
 // renderHistoryContent generates the string for the viewport
 func (m Model) renderHistoryContent(minHeight int) string {
 	if len(m.history) == 0 {
@@ -51,9 +94,9 @@ func (m Model) renderHistoryItem(i int) string {
 
 	// Query Line with syntax highlighting
 	if entry.Status != "info" {
-		indicator := " "
+		indicator := " "
 		if isExpanded {
-			indicator = " "
+			indicator = " "
 		}
 		headerContent.WriteString(indicator)
 	}
@@ -77,11 +120,11 @@ func (m Model) renderHistoryItem(i int) string {
 	headerContent.WriteString("\n")
 
 	// Meta Line - plain text for consistent background
-	statusIcon := ""
+	statusIcon := ""
 	if entry.Status == "error" {
-		statusIcon = ""
+		statusIcon = ""
 	} else if entry.Status == "info" {
-		statusIcon = ""
+		statusIcon = ""
 	}
 
 	var metaInfo string

@@ -8,30 +8,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
-
-func (m Model) renderImportPopup(main string) string {
-	var content strings.Builder
-
-	title := lipgloss.NewStyle().Bold(true).Foreground(AccentColor()).Render(
-		fmt.Sprintf("📥 Import into: %s", m.importTable))
-	content.WriteString(title)
-	content.WriteString("\n\n")
-	content.WriteString(m.importInput.View())
-	content.WriteString("\n\n")
-	content.WriteString(lipgloss.NewStyle().Faint(true).Render("Enter: import • Esc: cancel"))
-
-	popupWidth := 60
-	popupBox := PopupStyle.
-		Width(popupWidth).
-		MaxHeight(10).
-		Background(PopupBg()).
-		Render(content.String())
-
-	return overlay.Composite(popupBox, main, overlay.Center, overlay.Center, 0, 0)
-}
 
 func (m Model) exportTableCmd(tableName, filename string) tea.Cmd {
 	return func() tea.Msg {
