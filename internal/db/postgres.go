@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"net"
+	"net/url"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -21,8 +22,14 @@ type PostgresDriver struct {
 
 // Connect establishes connection to PostgreSQL
 func (d *PostgresDriver) Connect(params ConnectParams) error {
-	// Build connection string
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", params.User, params.Password, params.Host, params.Port, params.Database)
+	// Build connection string safely with url.URL
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(params.User, params.Password),
+		Host:   fmt.Sprintf("%s:%d", params.Host, params.Port),
+		Path:   "/" + params.Database,
+	}
+	dsn := u.String()
 
 	// Parse config
 	connConfig, err := pgx.ParseConfig(dsn)
@@ -38,9 +45,16 @@ func (d *PostgresDriver) Connect(params ConnectParams) error {
 		}
 		d.tunnel = tunnel
 
-		// Override DialFunc
+		// IMPORTANT: Override LookupFunc to do nothing. We want the SSH server
+		// to resolve the hostname, not the local machine.
+		connConfig.LookupFunc = func(ctx context.Context, host string) ([]string, error) {
+			return []string{host}, nil
+		}
+
+		// Override DialFunc to use DialContext and hostname
 		connConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return tunnel.Dial(network, addr)
+			remoteAddr := fmt.Sprintf("%s:%d", params.Host, params.Port)
+			return tunnel.DialContext(ctx, network, remoteAddr)
 		}
 	}
 
@@ -58,6 +72,17 @@ func (d *PostgresDriver) Connect(params ConnectParams) error {
 	db.SetMaxOpenConns(5)
 	db.SetMaxIdleConns(2)
 	db.SetConnMaxLifetime(5 * time.Minute)
+
+	// Verify connection
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		if d.tunnel != nil {
+			d.tunnel.Close()
+		}
+		return WrapConnectionError(err)
+	}
 
 	d.db = db
 	return nil
@@ -99,9 +124,15 @@ func (d *PostgresDriver) Type() DriverType {
 	return Postgres
 }
 
-// GetTables returns a list of tables in the public schema
+// GetTables returns a list of tables in all non-system schemas
 func (d *PostgresDriver) GetTables(ctx context.Context) ([]string, error) {
-	query := "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+	query := `
+		SELECT n.nspname || '.' || c.relname
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+		AND c.relkind IN ('r', 'v', 'm', 'f', 'p')
+		ORDER BY 1`
 	rows, err := d.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, WrapQueryError(err)
@@ -122,23 +153,23 @@ func (d *PostgresDriver) GetTables(ctx context.Context) ([]string, error) {
 // GetColumns returns detailed column metadata for a table
 func (d *PostgresDriver) GetColumns(ctx context.Context, tableName string) ([]Column, error) {
 	query := `
-		SELECT 
-			column_name, 
-			data_type, 
-			is_nullable = 'YES' as nullable, 
-			COALESCE(column_default, '') as default_value,
-			COALESCE((
-				SELECT 'PRI' 
-				FROM information_schema.key_column_usage k 
-				JOIN information_schema.table_constraints tc ON k.constraint_name = tc.constraint_name 
-				WHERE k.table_name = c.table_name 
-				AND k.column_name = c.column_name 
-				AND tc.constraint_type = 'PRIMARY KEY' 
-				LIMIT 1
-			), '') as key_type
-		FROM information_schema.columns c
-		WHERE table_name = $1 AND table_schema = 'public'
-		ORDER BY ordinal_position`
+		SELECT
+			a.attname AS column_name,
+			format_type(a.atttypid, a.atttypmod) AS data_type,
+			NOT a.attnotnull AS nullable,
+			COALESCE(pg_get_expr(d.adbin, d.adrelid), '') AS default_value,
+			COALESCE(
+				(SELECT 'PRI' FROM pg_index i WHERE i.indrelid = a.attrelid AND a.attnum = ANY(i.indkey::int2[]) AND i.indisprimary LIMIT 1),
+				(SELECT 'UNI' FROM pg_index i WHERE i.indrelid = a.attrelid AND a.attnum = ANY(i.indkey::int2[]) AND i.indisunique AND NOT i.indisprimary LIMIT 1),
+				(SELECT 'FK' FROM pg_constraint c WHERE c.conrelid = a.attrelid AND a.attnum = ANY(c.conkey::int2[]) AND c.contype = 'f' LIMIT 1),
+				''
+			) AS key_type
+		FROM pg_attribute a
+		LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+		JOIN pg_class cl ON a.attrelid = cl.oid
+		JOIN pg_namespace n ON cl.relnamespace = n.oid
+		WHERE n.nspname || '.' || cl.relname = $1 AND a.attnum > 0 AND NOT a.attisdropped
+		ORDER BY a.attnum`
 
 	rows, err := d.db.QueryContext(ctx, query, tableName)
 	if err != nil {
@@ -173,7 +204,8 @@ func (d *PostgresDriver) GetConstraints(ctx context.Context, tableName string) (
 		FROM pg_constraint c
 		JOIN pg_class cl ON cl.oid = c.conrelid
 		JOIN pg_namespace n ON n.oid = cl.relnamespace
-		WHERE cl.relname = $1 AND n.nspname = 'public'`
+		WHERE n.nspname || '.' || cl.relname = $1
+		ORDER BY conname`
 
 	rows, err := d.db.QueryContext(ctx, query, tableName)
 	if err != nil {

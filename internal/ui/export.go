@@ -11,12 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// ExportCompleteMsg is sent when export is complete
-type ExportCompleteMsg struct {
-	Path string
-	Err  error
-}
-
 // exportTableToPath exports all query results to a specified path
 func (m Model) exportTableToPath(filename string) tea.Cmd {
 	if m.popupResult == nil {

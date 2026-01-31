@@ -1,0 +1,2 @@
+id|created_at|updated_at|first_name|last_name|gender|email|mobile|username|password|last_login|blocked|refresh_token|role|address|postal_code|flag_use_address|country_id|phone_code|nric_passport|bank_account|deleted_at|social_media|full_name|currency
+205|2021-01-16 01:00:04.000|2021-01-16 01:00:04.000|Katherine|Yap|F|katherine_secrets@hotmail.com|97660023|katherine_secrets@hotmail.com|$2a$10$EP7pD3hKAA8Rde/BEwvEse9AbhpRYd2oa8b/TcBHcfA/.89hUY4NG|2021-01-16 01:00:04.000|0|1n85JMcp7lGfNRGXeO2fIneSLQK|user|||0|1|+65|NULL|NULL|NULL|NULL|Katherine Yap|NULL

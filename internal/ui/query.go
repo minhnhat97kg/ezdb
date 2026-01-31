@@ -13,12 +13,6 @@ import (
 	"github.com/nhath/ezdb/internal/history"
 )
 
-// ClipboardCopiedMsg is sent when clipboard copy completes
-type ClipboardCopiedMsg struct {
-	Text string
-	Err  error
-}
-
 // copyToClipboardCmd copies text to clipboard using pbcopy (macOS)
 func (m Model) copyToClipboardCmd(text string) tea.Cmd {
 	return func() tea.Msg {

@@ -24,23 +24,6 @@ import (
 	eztable "github.com/nhath/ezdb/internal/ui/components/table"
 )
 
-// Mode represents the current UI mode
-type Mode string
-
-// AppState represents the overall application state
-type AppState string
-
-const (
-	InsertMode Mode = "INSERT"
-	VisualMode Mode = "VISUAL"
-)
-
-const (
-	StateSelectingProfile AppState = "SELECTING_PROFILE"
-	StateConnecting       AppState = "CONNECTING"
-	StateReady            AppState = "READY"
-)
-
 // Model is the root Bubble Tea model
 type Model struct {
 	// App state
@@ -342,18 +325,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err := m.config.AddProfile(p); err != nil {
 				m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("Error adding profile: %v", err))
 			} else {
-				m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("✓ Added profile: %s", p.Name))
-				// Reload profile selector with updated list
+				m.statusMsg = fmt.Sprintf("✓ Added profile: %s", p.Name)
+				// Reload profile selector with updated list and reset its state
 				m.reloadProfiles()
+				m.profileSelector = m.profileSelector.ResetState()
 			}
 		} else {
 			// Update existing profile
 			if err := m.config.UpdateProfile(msg.Profile.Name, p); err != nil {
 				m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("Error updating profile: %v", err))
 			} else {
-				m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("✓ Updated profile: %s", p.Name))
-				// Reload profile selector with updated list
+				m.statusMsg = fmt.Sprintf("✓ Updated profile: %s", p.Name)
+				// Reload profile selector with updated list and reset its state
 				m.reloadProfiles()
+				m.profileSelector = m.profileSelector.ResetState()
 			}
 		}
 		return m, nil
@@ -528,6 +513,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clear status message on any key press
 		m.statusMsg = ""
 
+		// DRIVER-FIRST HANDLING: If we are selecting a profile, delegate immediately
+		// to avoid global keys (like 't' for theme) intercepting input in the Add/Edit form.
+		if m.appState == StateSelectingProfile {
+			if matchKey(msg, m.config.Keys.Help) {
+				m.openHelpPopup()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.profileSelector, cmd = m.profileSelector.Update(msg)
+			return m, cmd
+		}
+
 		// Global keys that should intercept everything (but not typing in InsertMode)
 		// Try to run them only if NOT in InsertMode, OR if they are modifier keys (Ctrl+...)
 		// Don't intercept 't' when schema browser or theme selector is visible
@@ -621,17 +618,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.themeSelector.Visible() && m.popupStack.TopName() == "theme" {
 				m.popupStack.Pop()
 			}
-			return m, cmd
-		}
-
-		// Profile selector handling
-		if m.appState == StateSelectingProfile {
-			if matchKey(msg, m.config.Keys.Help) {
-				m.openHelpPopup()
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.profileSelector, cmd = m.profileSelector.Update(msg)
 			return m, cmd
 		}
 
@@ -818,7 +804,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 
 			// Autocomplete interaction
-			if m.autocompleting {
+			hasPopup := m.hasOpenPopup() || m.showPopup || m.showHelpPopup || m.showTemplatePopup ||
+				m.showImportPopup || m.showExportPopup || m.showRowActionPopup || m.showActionPopup ||
+				m.themeSelector.Visible()
+
+			if m.autocompleting && !hasPopup {
 				switch msg.String() {
 				case "up", "ctrl+p":
 					if m.suggestionIdx > 0 {
@@ -840,7 +830,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			if matchKey(msg, m.config.Keys.Autocomplete) {
+			if matchKey(msg, m.config.Keys.Autocomplete) && !hasPopup {
 				m.autocompleting = true
 				m = m.updateSuggestions()
 				if len(m.tables) == 0 && !m.loadingTables {
@@ -1286,7 +1276,11 @@ func (m Model) View() string {
 	}
 
 	// 5. Suggestions Overlay
-	if m.autocompleting && m.mode == InsertMode {
+	hasPopup := m.hasOpenPopup() || m.showPopup || m.showHelpPopup || m.showTemplatePopup ||
+		m.showImportPopup || m.showExportPopup || m.showRowActionPopup || m.showActionPopup ||
+		m.themeSelector.Visible()
+
+	if m.autocompleting && m.mode == InsertMode && !hasPopup {
 		suggestions := m.renderSuggestions()
 		if suggestions != "" {
 			// Calculate position relative to input area
@@ -1566,9 +1560,9 @@ func (m Model) selectRowAsQuery() (Model, tea.Cmd) {
 	}
 
 	// Extract table name from query
-	// This is naive but works for simple "SELECT * FROM table" queries
+	// This handles both "table" and "schema.table"
 	query := m.popupEntry.Query
-	re := regexp.MustCompile(`(?i)from\s+["']?([a-zA-Z0-9_]+)["']?`)
+	re := regexp.MustCompile(`(?i)from\s+["'\[]?([a-zA-Z0-9._]+)["'\]]?`)
 	matches := re.FindStringSubmatch(query)
 	if len(matches) < 2 {
 		m.errorMsg = "Could not determine table name from query"
@@ -1576,32 +1570,47 @@ func (m Model) selectRowAsQuery() (Model, tea.Cmd) {
 	}
 	tableName := matches[1]
 
-	// Find PK columns
-	// Try direct match first
-	cols, ok := m.columns[tableName]
-	if !ok {
-		// Try case-insensitive match
-		found := false
+	// Find the columns for this table, handling schema prefixes
+	var cols []db.Column
+	var ok bool
+
+	// 1. Direct match
+	if cols, ok = m.columns[tableName]; !ok {
+		// 2. Case-insensitive
 		for realName, c := range m.columns {
 			if strings.EqualFold(realName, tableName) {
 				tableName = realName
 				cols = c
-				found = true
+				ok = true
 				break
 			}
 		}
-		if !found {
-			// Log full debug info to file since UI might truncate it
-			f, _ := os.OpenFile("debug_metadata.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-			if f != nil {
-				fmt.Fprintf(f, "Timestamp: %s\nTable: %s\nLoaded Tables Count: %d\nColumns found for table: %v\nAll tables: %v\n\n",
-					time.Now(), tableName, len(m.tables), m.columns[tableName], m.tables)
-				f.Close()
-			}
 
-			m.errorMsg = fmt.Sprintf("Metadata missing for %s (Tabs: %d). See debug_metadata.log", tableName, len(m.tables))
-			return m, nil
+		if !ok {
+			// 3. Suffix match (lookup "users" in "public.users")
+			suffix := "." + strings.ToLower(tableName)
+			for realName, c := range m.columns {
+				if strings.HasSuffix(strings.ToLower(realName), suffix) {
+					tableName = realName
+					cols = c
+					ok = true
+					break
+				}
+			}
 		}
+	}
+
+	if !ok {
+		// Log full debug info to file since UI might truncate it
+		f, _ := os.OpenFile("debug_metadata.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if f != nil {
+			fmt.Fprintf(f, "Timestamp: %s\nTable: %s\nLoaded Tables Count: %d\nAll tables: %v\n\n",
+				time.Now(), tableName, len(m.tables), m.tables)
+			f.Close()
+		}
+
+		m.errorMsg = fmt.Sprintf("Metadata missing for %s (Tabs: %d). See debug_metadata.log", tableName, len(m.tables))
+		return m, nil
 	}
 
 	var pkCols []db.Column
@@ -1716,6 +1725,7 @@ func (m *Model) openHelpPopup() {
 	}
 	// Add to stack so it can be closed with q/Esc
 	m.showHelpPopup = true
+	m.autocompleting = false
 	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	fmt.Fprintf(f, "Pushing help. Stack len before: %d\n", m.popupStack.Len())
 	f.Close()
@@ -1731,6 +1741,7 @@ func (m *Model) openTemplatePopup(tableName string) {
 		return
 	}
 	m.showTemplatePopup = true
+	m.autocompleting = false
 	m.templateTable = tableName
 	m.templateIdx = 0
 	m.popupStack.Push("template", func(m *Model) bool {
@@ -1749,6 +1760,7 @@ func (m *Model) openResultsPopup(entry *history.HistoryEntry, result *db.QueryRe
 	m.popupEntry = entry
 	m.popupResult = result
 	m.showPopup = true
+	m.autocompleting = false
 	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	fmt.Fprintf(f, "Pushing results. Stack len before: %d\n", m.popupStack.Len())
 	f.Close()
@@ -1767,6 +1779,7 @@ func (m *Model) openRowActionPopup() {
 		return
 	}
 	m.showRowActionPopup = true
+	m.autocompleting = false
 	m.popupStack.Push("rowAction", func(m *Model) bool {
 		m.showRowActionPopup = false
 		return true
@@ -1779,6 +1792,7 @@ func (m *Model) openExportPopup(defaultName string) {
 		return
 	}
 	m.showExportPopup = true
+	m.autocompleting = false
 	m.exportInput.SetValue(defaultName)
 	m.exportInput.Focus()
 	m.popupStack.Push("export", func(m *Model) bool {
@@ -1794,6 +1808,7 @@ func (m *Model) openImportPopup(tableName string) {
 		return
 	}
 	m.showImportPopup = true
+	m.autocompleting = false
 	m.importInput.SetValue("")
 	m.importInput.Focus()
 	m.importTable = tableName
@@ -1811,6 +1826,7 @@ func (m *Model) openActionPopup() {
 		return
 	}
 	m.showActionPopup = true
+	m.autocompleting = false
 	m.popupStack.Push("action", func(m *Model) bool {
 		m.showActionPopup = false
 		return true
@@ -1823,6 +1839,7 @@ func (m *Model) openThemeSelector() {
 		return
 	}
 	m.themeSelector = m.themeSelector.Show()
+	m.autocompleting = false
 	m.popupStack.Push("theme", func(m *Model) bool {
 		m.themeSelector = m.themeSelector.Hide()
 		return true

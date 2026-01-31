@@ -7,16 +7,6 @@ import (
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
-// HelpContext represents the current UI context for help display
-type HelpContext int
-
-const (
-	HelpContextVisual HelpContext = iota
-	HelpContextInsert
-	HelpContextPopup
-	HelpContextSchema
-)
-
 func (m Model) getHelpContext() HelpContext {
 	if m.schemaBrowser.IsVisible() {
 		return HelpContextSchema

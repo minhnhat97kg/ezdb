@@ -35,7 +35,8 @@ func (d *MySQLDriver) Connect(params ConnectParams) error {
 		// Use a simple random suffix to avoid collisions
 		d.netName = fmt.Sprintf("mysql+ssh+%d", time.Now().UnixNano())
 		mysql.RegisterDialContext(d.netName, func(ctx context.Context, addr string) (net.Conn, error) {
-			return tunnel.Dial("tcp", addr)
+			// addr here is what was in dsn: host:port, which is usually params.Host:params.Port
+			return tunnel.DialContext(ctx, "tcp", addr)
 		})
 		protocol = d.netName
 	}

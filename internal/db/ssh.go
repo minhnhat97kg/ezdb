@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -138,6 +139,30 @@ func NewSSHTunnel(config *SSHConfig) (*SSHTunnel, error) {
 // Dial connects to a remote address through the tunnel
 func (t *SSHTunnel) Dial(network, addr string) (net.Conn, error) {
 	return t.client.Dial(network, addr)
+}
+
+// DialContext connects to a remote address through the tunnel with context support
+func (t *SSHTunnel) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	ch := make(chan result, 1)
+
+	go func() {
+		conn, err := t.client.Dial(network, addr)
+		ch <- result{conn, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		// If the context is cancelled, we return an error.
+		// Note: The goroutine above might still be dialing and will leak if it succeeds,
+		// but since we return from the driver's Connect, the app can recover.
+		return nil, ctx.Err()
+	case res := <-ch:
+		return res.conn, res.err
+	}
 }
 
 // Close closes the SSH connection

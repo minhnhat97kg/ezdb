@@ -272,6 +272,15 @@ func New(profiles []Profile, theme config.Theme) Model {
 		return t
 	}
 
+	newPasswordInput := func(placeholder string, width int) textinput.Model {
+		t := textinput.New()
+		t.Placeholder = placeholder
+		t.Width = width
+		t.EchoMode = textinput.EchoPassword
+		t.EchoCharacter = '•'
+		return t
+	}
+
 	return Model{
 		profiles:      profiles,
 		selected:      0,
@@ -284,13 +293,13 @@ func New(profiles []Profile, theme config.Theme) Model {
 		portInput:         newInput("Port (5432)", 10),
 		userInput:         newInput("User", 30),
 		databaseInput:     newInput("Database / Path", 40),
-		passwordFormInput: newInput("Password (optional)", 30),
+		passwordFormInput: newPasswordInput("Password (optional)", 30),
 
 		sshHostInput:     newInput("SSH Host", 40),
 		sshPortInput:     newInput("SSH Port (22)", 10),
 		sshUserInput:     newInput("SSH User", 30),
 		sshKeyInput:      newInput("SSH Key Path (~/.ssh/id_rsa)", 50),
-		sshPasswordInput: newInput("SSH Password (optional)", 30),
+		sshPasswordInput: newPasswordInput("SSH Password (optional)", 30),
 
 		formFocused: 0,
 		styles:      DefaultStyles(theme),
@@ -322,6 +331,16 @@ func (m Model) SetStyles(s Styles) Model {
 // SetStatusMessage sets a temporary status message
 func (m Model) SetStatusMessage(msg string) Model {
 	m.statusMessage = msg
+	return m
+}
+
+// ResetState goes back to selection mode
+func (m Model) ResetState() Model {
+	m.state = StateSelectingProfile
+	m.menuSelected = 0
+	m.clearInputs()
+	m.editingProfile = nil
+	m.statusMessage = ""
 	return m
 }
 
@@ -428,6 +447,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.editingProfile = nil
 				m.statusMessage = ""
 				return m, nil
+			case "ctrl+c":
+				return m, tea.Quit
 			default:
 				// Update the focused input
 				var cmd tea.Cmd
@@ -566,7 +587,48 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	}
 
-	return m, nil
+	// Handle non-key messages (like TickMsg for blinking)
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	// Update password prompt if in that state
+	if m.state == StateEnteringPassword {
+		m.passwordInput, cmd = m.passwordInput.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	// For form inputs:
+	// If it's a key message, it was already handled in the focused field switch above.
+	// If it's NOT a key message (e.g. TickMsg), we should update all of them
+	// to ensure blinking/other animations work.
+	if _, ok := msg.(tea.KeyMsg); !ok {
+		m.nameInput, cmd = m.nameInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.typeInput, cmd = m.typeInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.hostInput, cmd = m.hostInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.portInput, cmd = m.portInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.userInput, cmd = m.userInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.databaseInput, cmd = m.databaseInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.passwordFormInput, cmd = m.passwordFormInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.sshHostInput, cmd = m.sshHostInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.sshPortInput, cmd = m.sshPortInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.sshUserInput, cmd = m.sshUserInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.sshKeyInput, cmd = m.sshKeyInput.Update(msg)
+		cmds = append(cmds, cmd)
+		m.sshPasswordInput, cmd = m.sshPasswordInput.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 // View renders the selector

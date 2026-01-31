@@ -9,12 +9,6 @@ import (
 	"github.com/nhath/ezdb/internal/ui/components/popup"
 )
 
-// ThemeSelectedMsg is sent when a theme is selected
-type ThemeSelectedMsg struct {
-	ThemeName string
-	Theme     config.Theme
-}
-
 type ThemeSelector struct {
 	visible  bool
 	themes   []string

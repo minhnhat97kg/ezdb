@@ -7,17 +7,6 @@ import (
 	"github.com/nhath/ezdb/internal/db"
 )
 
-// SuggestionType indicates what kind of completion to show
-type SuggestionType int
-
-const (
-	SuggestKeyword SuggestionType = iota
-	SuggestTable
-	SuggestColumn
-	SuggestFunction
-	SuggestAlias
-)
-
 // Suggestion represents a single autocomplete suggestion
 type Suggestion struct {
 	Text     string
@@ -175,15 +164,18 @@ func ParseSQLContext(sql string, cursorPos int) SQLContext {
 	ctx.Tables, ctx.TableAliases = extractTables(sql[:cursorPos])
 
 	// Check if we're after a dot (qualified name)
-	trimmed := strings.TrimRight(sql[:cursorPos], " \t\n")
-	if strings.HasSuffix(trimmed, ".") {
+	_, start, _ := GetWordAtCursor(sql, cursorPos)
+	if start > 0 && sql[start-1] == '.' {
 		ctx.AfterDot = true
 		// Find the qualifier before the dot
-		words := strings.Fields(trimmed)
-		if len(words) > 0 {
-			lastWord := words[len(words)-1]
-			ctx.Qualifier = strings.TrimSuffix(lastWord, ".")
-		}
+		qualifierWord, _, _ := GetWordAtCursor(sql, start-1)
+		ctx.Qualifier = qualifierWord
+	} else if strings.HasSuffix(strings.TrimRight(sql[:cursorPos], " \t\n"), ".") {
+		// Just typed a dot
+		ctx.AfterDot = true
+		trimmed := strings.TrimRight(sql[:cursorPos], " \t\n")
+		qualifierWord, _, _ := GetWordAtCursor(sql, len(trimmed))
+		ctx.Qualifier = qualifierWord
 	}
 
 	return ctx
@@ -195,7 +187,7 @@ func tokenizeSQL(sql string) []string {
 	var current strings.Builder
 
 	for _, r := range sql {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.' {
 			current.WriteRune(r)
 		} else {
 			if current.Len() > 0 {
@@ -263,6 +255,33 @@ func isKeyword(s string) bool {
 	return false
 }
 
+// findTableColumns finds columns for a table name, handling schema prefixes and case sensitivity
+func findTableColumns(tableName string, columns map[string][]db.Column) ([]db.Column, bool) {
+	// 1. Exact match
+	if cols, ok := columns[tableName]; ok {
+		return cols, true
+	}
+
+	lowerName := strings.ToLower(tableName)
+
+	// 2. Case-insensitive exact match
+	for k, v := range columns {
+		if strings.ToLower(k) == lowerName {
+			return v, true
+		}
+	}
+
+	// 3. Suffix match (e.g., "users" matches "public.users")
+	suffix := "." + lowerName
+	for k, v := range columns {
+		if strings.HasSuffix(strings.ToLower(k), suffix) {
+			return v, true
+		}
+	}
+
+	return nil, false
+}
+
 // GetSuggestions returns context-aware suggestions
 func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Column, input string) []Suggestion {
 	var suggestions []Suggestion
@@ -274,24 +293,11 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 		// Check if it's an alias
 		if actual, ok := ctx.TableAliases[tableName]; ok {
 			tableName = actual
-		}
-		// Also check uppercase version
-		if actual, ok := ctx.TableAliases[strings.ToUpper(tableName)]; ok {
+		} else if actual, ok := ctx.TableAliases[strings.ToUpper(tableName)]; ok {
 			tableName = actual
 		}
 
-		if cols, ok := columns[tableName]; ok {
-			for _, col := range cols {
-				suggestions = append(suggestions, Suggestion{
-					Text:     col.Name,
-					Type:     SuggestColumn,
-					Detail:   col.Type,
-					Priority: 1,
-				})
-			}
-		}
-		// Also try lowercase table name
-		if cols, ok := columns[strings.ToLower(tableName)]; ok {
+		if cols, ok := findTableColumns(tableName, columns); ok {
 			for _, col := range cols {
 				suggestions = append(suggestions, Suggestion{
 					Text:     col.Name,
@@ -316,7 +322,7 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 		// After SELECT - suggest columns, functions, tables (for table.*)
 		// Add columns from referenced tables
 		for _, tbl := range ctx.Tables {
-			if cols, ok := columns[tbl]; ok {
+			if cols, ok := findTableColumns(tbl, columns); ok {
 				for _, col := range cols {
 					suggestions = append(suggestions, Suggestion{
 						Text:     col.Name,
@@ -357,7 +363,7 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 	case ctx.InWhere || ctx.InHaving:
 		// After WHERE - suggest columns, operators, functions
 		for _, tbl := range ctx.Tables {
-			if cols, ok := columns[tbl]; ok {
+			if cols, ok := findTableColumns(tbl, columns); ok {
 				for _, col := range cols {
 					suggestions = append(suggestions, Suggestion{
 						Text:     col.Name,
@@ -370,7 +376,7 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 		}
 		// Also add table-qualified columns
 		for _, tbl := range ctx.Tables {
-			if cols, ok := columns[tbl]; ok {
+			if cols, ok := findTableColumns(tbl, columns); ok {
 				for _, col := range cols {
 					suggestions = append(suggestions, Suggestion{
 						Text:     tbl + "." + col.Name,
@@ -393,7 +399,7 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 	case ctx.InGroupBy:
 		// After GROUP BY - suggest columns
 		for _, tbl := range ctx.Tables {
-			if cols, ok := columns[tbl]; ok {
+			if cols, ok := findTableColumns(tbl, columns); ok {
 				for _, col := range cols {
 					suggestions = append(suggestions, Suggestion{
 						Text:     col.Name,
@@ -411,7 +417,7 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 	case ctx.InOrderBy:
 		// After ORDER BY - suggest columns and ASC/DESC
 		for _, tbl := range ctx.Tables {
-			if cols, ok := columns[tbl]; ok {
+			if cols, ok := findTableColumns(tbl, columns); ok {
 				for _, col := range cols {
 					suggestions = append(suggestions, Suggestion{
 						Text:     col.Name,
@@ -429,7 +435,7 @@ func GetSuggestions(ctx SQLContext, tables []string, columns map[string][]db.Col
 	case ctx.InSet:
 		// After SET in UPDATE - suggest columns
 		for _, tbl := range ctx.Tables {
-			if cols, ok := columns[tbl]; ok {
+			if cols, ok := findTableColumns(tbl, columns); ok {
 				for _, col := range cols {
 					suggestions = append(suggestions, Suggestion{
 						Text:     col.Name,
@@ -523,7 +529,7 @@ func GetWordAtCursor(text string, cursor int) (string, int, int) {
 }
 
 func isValidIdentifierChar(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.'
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
 // Legacy function for backward compatibility

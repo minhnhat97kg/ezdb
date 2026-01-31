@@ -12,19 +12,6 @@ import (
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
-// ExportTableCompleteMsg is sent when table export completes
-type ExportTableCompleteMsg struct {
-	Filename string
-	Rows     int
-	Err      error
-}
-
-// ImportTableCompleteMsg is sent when table import completes
-type ImportTableCompleteMsg struct {
-	Rows int
-	Err  error
-}
-
 func (m Model) renderImportPopup(main string) string {
 	var content strings.Builder
 

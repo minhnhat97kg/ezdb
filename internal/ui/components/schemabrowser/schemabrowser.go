@@ -4,9 +4,9 @@ package schemabrowser
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -221,24 +221,12 @@ func (m Model) SetSchema(tables []string, columns map[string][]db.Column, constr
 // LoadSchemaCmd loads schema from driver
 func LoadSchemaCmd(driver db.Driver) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		f, _ := os.OpenFile("schema_loader_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if f != nil {
-			fmt.Fprintf(f, "Step 1: LoadSchemaCmd started\n")
-		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 
 		tables, err := driver.GetTables(ctx)
 		if err != nil {
-			if f != nil {
-				fmt.Fprintf(f, "Step 1.5: GetTables error: %v\n", err)
-				f.Close()
-			}
 			return SchemaLoadedMsg{Err: err}
-		}
-
-		if f != nil {
-			fmt.Fprintf(f, "Step 2: Found tables: %v\n", tables)
 		}
 
 		columns := make(map[string][]db.Column)
@@ -271,11 +259,6 @@ func LoadSchemaCmd(driver db.Driver) tea.Cmd {
 		}
 
 		wg.Wait()
-
-		if f != nil {
-			fmt.Fprintf(f, "Step 3: Finished fetching columns. Columns map size: %d\n", len(columns))
-			f.Close()
-		}
 
 		return SchemaLoadedMsg{Tables: tables, Columns: columns, Constraints: constraints}
 	}
