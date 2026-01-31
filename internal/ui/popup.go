@@ -35,7 +35,11 @@ func (m Model) renderResultsPopup(main string) string {
 	var content strings.Builder
 
 	// Header
-	content.WriteString(fmt.Sprintf("Query: %s\n", m.popupEntry.Query))
+	q := m.popupEntry.Query
+	if len(q) > 100 {
+		q = q[:97] + "..."
+	}
+	content.WriteString(fmt.Sprintf("Query: %s\n", q))
 	content.WriteString(fmt.Sprintf("Execution Time: %dms | Rows: %d\n\n",
 		m.popupEntry.DurationMs, m.popupResult.RowCount))
 
