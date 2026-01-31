@@ -540,20 +540,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.SetValue("")
 					m.editor.Reset() // Reset cursor to top-left
 
-					// Check for commands
-					if strings.HasPrefix(query, "/") {
-						var cmd tea.Cmd
-						m, cmd = m.handleCommand(query)
-						cmds = append(cmds, cmd)
-					} else {
-						if m.strictMode && isModifyingQuery(query) {
-							m.confirming = true
-							m.pendingQuery = query
-							return m, nil
-						}
-						m.loading = true
-						cmds = append(cmds, m.executeQueryCmd(query))
+					if m.strictMode && isModifyingQuery(query) {
+						m.confirming = true
+						m.pendingQuery = query
+						return m, nil
 					}
+					m.loading = true
+					cmds = append(cmds, m.executeQueryCmd(query))
 					// Scroll to bottom handled by history update
 				}
 				return m, tea.Batch(cmds...)
@@ -1199,19 +1192,29 @@ func (m *Model) reloadProfiles() {
 	profiles := make([]profileselector.Profile, len(m.config.Profiles))
 	for i, cp := range m.config.Profiles {
 		profiles[i] = profileselector.Profile{
-			Name:        cp.Name,
-			Type:        cp.Type,
-			Host:        cp.Host,
-			Port:        cp.Port,
-			User:        cp.User,
-			Database:    cp.Database,
-			Password:    cp.Password,
-			SSHHost:     cp.SSHHost,
-			SSHPort:     cp.SSHPort,
-			SSHUser:     cp.SSHUser,
-			SSHKeyPath:  cp.SSHKeyPath,
-			SSHPassword: cp.SSHPassword,
+			Name:     cp.Name,
+			Type:     cp.Type,
+			Host:     cp.Host,
+			Port:     cp.Port,
+			User:     cp.User,
+			Database: cp.Database,
+			Password: cp.Password,
 		}
 	}
 	m.profileSelector = m.profileSelector.SetProfiles(profiles)
+}
+
+// addSystemMessage adds a system message to the history
+func (m Model) addSystemMessage(msg string) Model {
+	entry := history.HistoryEntry{
+		ID:         time.Now().UnixNano(),
+		Query:      msg,
+		Status:     "info",
+		ExecutedAt: time.Now(),
+	}
+	m.history = append(m.history, entry)
+	m.selected = len(m.history) - 1
+	m.viewport.SetContent(m.renderHistoryContent(m.viewport.Height))
+	m.viewport.GotoBottom()
+	return m
 }
