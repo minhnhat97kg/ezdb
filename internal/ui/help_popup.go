@@ -1,96 +1,212 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
+// HelpContext represents the current UI context for help display
+type HelpContext int
+
+const (
+	HelpContextVisual HelpContext = iota
+	HelpContextInsert
+	HelpContextPopup
+	HelpContextSchema
+)
+
+func (m Model) getHelpContext() HelpContext {
+	if m.schemaBrowser.IsVisible() {
+		return HelpContextSchema
+	}
+	if m.showPopup {
+		return HelpContextPopup
+	}
+	if m.mode == InsertMode {
+		return HelpContextInsert
+	}
+	return HelpContextVisual
+}
+
 func (m Model) renderHelpPopup(main string) string {
 	var content strings.Builder
 
-	// Title
-	title := lipgloss.NewStyle().Bold(true).Foreground(AccentColor()).Render("⌨️  Keyboard Shortcuts")
-	content.WriteString(title)
-	content.WriteString("\n\n")
-
 	keys := m.config.Keys
+	ctx := m.getHelpContext()
 
-	// Section helper
-	section := func(name string, bindings []struct{ key, desc string }) {
-		header := lipgloss.NewStyle().Bold(true).Foreground(HighlightColor()).Render(name)
-		content.WriteString(header + "\n")
-		for _, b := range bindings {
-			keyStyle := lipgloss.NewStyle().Foreground(SuccessColor()).Width(15)
-			descStyle := lipgloss.NewStyle().Foreground(TextSecondary())
-			content.WriteString(fmt.Sprintf("  %s %s\n", keyStyle.Render(b.key), descStyle.Render(b.desc)))
-		}
+	// Styles
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(AccentColor()).
+		MarginBottom(1)
+
+	sectionStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(HighlightColor()).
+		MarginTop(1)
+
+	keyStyle := lipgloss.NewStyle().
+		Foreground(TextPrimary()).
+		Background(CardBg()).
+		Padding(0, 1).
+		Bold(true)
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(TextSecondary())
+
+	rowStyle := lipgloss.NewStyle().
+		MarginLeft(1)
+
+	footerStyle := lipgloss.NewStyle().
+		Faint(true).
+		MarginTop(1)
+
+	// Helper to render a key binding row
+	renderRow := func(key, desc string) string {
+		return rowStyle.Render(keyStyle.Render(key) + " " + descStyle.Render(desc))
+	}
+
+	// Context title
+	var contextName string
+	switch ctx {
+	case HelpContextInsert:
+		contextName = "Insert Mode"
+	case HelpContextPopup:
+		contextName = "Results View"
+	case HelpContextSchema:
+		contextName = "Schema Browser"
+	default:
+		contextName = "Visual Mode"
+	}
+
+	content.WriteString(titleStyle.Render("Shortcuts - " + contextName))
+	content.WriteString("\n")
+
+	// Context-specific shortcuts
+	switch ctx {
+	case HelpContextInsert:
+		content.WriteString(sectionStyle.Render("Query"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Execute[0], "Execute query"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Explain[0], "Explain query"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Autocomplete[0], "Autocomplete"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Edit"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Undo[0], "Undo"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Redo[0], "Redo"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Navigation"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("esc", "Exit to Visual mode"))
+		content.WriteString("\n")
+
+	case HelpContextPopup:
+		content.WriteString(sectionStyle.Render("Navigation"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.MoveUp[0]+"/"+keys.MoveDown[0], "Navigate rows"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ScrollLeft[0]+"/"+keys.ScrollRight[0], "Scroll columns"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.NextPage[0]+"/"+keys.PrevPage[0], "Page up/down"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Actions"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.RowAction[0], "Row actions"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Filter[0], "Filter results"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Export[0], "Export to file"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Exit"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("esc", "Close popup"))
+		content.WriteString("\n")
+
+	case HelpContextSchema:
+		content.WriteString(sectionStyle.Render("Navigation"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.MoveUp[0]+"/"+keys.MoveDown[0], "Navigate tables"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("l/h", "Switch tabs"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Actions"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("enter", "View columns"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("t", "Query templates"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("e", "Export table"))
+		content.WriteString("\n")
+		content.WriteString(renderRow("o", "Import into table"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Exit"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ToggleSchema[0], "Close browser"))
+		content.WriteString("\n")
+
+	default: // Visual mode
+		content.WriteString(sectionStyle.Render("Navigation"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.MoveUp[0]+"/"+keys.MoveDown[0], "Navigate history"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.GoTop[0]+"/"+keys.GoBottom[0], "Jump to top/bottom"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ToggleExpand[0], "Expand/collapse"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Actions"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.InsertMode[0], "Enter Insert mode"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Rerun[0], "Rerun query"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Edit[0], "Edit query"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Copy[0], "Copy query"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.Delete[0], "Delete entry"))
+		content.WriteString("\n")
+
+		content.WriteString(sectionStyle.Render("Panels"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ToggleSchema[0], "Schema browser"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ToggleTheme[0], "Theme selector"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ShowProfiles[0], "Switch profile"))
+		content.WriteString("\n")
+		content.WriteString(renderRow(keys.ToggleStrict[0], "Toggle strict mode"))
 		content.WriteString("\n")
 	}
 
-	// Navigation
-	section("Navigation", []struct{ key, desc string }{
-		{strings.Join(keys.MoveUp, "/"), "Move up"},
-		{strings.Join(keys.MoveDown, "/"), "Move down"},
-		{strings.Join(keys.GoTop, "/"), "Go to top"},
-		{strings.Join(keys.GoBottom, "/"), "Go to bottom"},
-		{strings.Join(keys.NextPage, "/"), "Next page"},
-		{strings.Join(keys.PrevPage, "/"), "Previous page"},
-		{strings.Join(keys.ScrollLeft, "/"), "Scroll left"},
-		{strings.Join(keys.ScrollRight, "/"), "Scroll right"},
-	})
+	// Always show quit
+	content.WriteString(sectionStyle.Render("General"))
+	content.WriteString("\n")
+	content.WriteString(renderRow(keys.Help[0], "Toggle this help"))
+	content.WriteString("\n")
+	content.WriteString(renderRow(keys.Quit[0], "Quit"))
+	content.WriteString("\n")
 
-	// Actions
-	section("Actions", []struct{ key, desc string }{
-		{strings.Join(keys.Execute, "/"), "Execute query"},
-		{strings.Join(keys.Explain, "/"), "Explain query"},
-		{strings.Join(keys.InsertMode, "/"), "Insert mode"},
-		{strings.Join(keys.ToggleExpand, "/"), "Toggle expand / Select"},
-		{strings.Join(keys.Rerun, "/"), "Rerun query"},
-		{strings.Join(keys.Edit, "/"), "Edit query"},
-		{strings.Join(keys.Copy, "/"), "Copy query"},
-		{strings.Join(keys.Delete, "/"), "Delete entry"},
-		{strings.Join(keys.Filter, "/"), "Filter"},
-		{strings.Join(keys.Export, "/"), "Export"},
-		{strings.Join(keys.Sort, "/"), "Sort"},
-	})
-
-	// Panels
-	section("Panels", []struct{ key, desc string }{
-		{strings.Join(keys.ToggleSchema, "/"), "Toggle schema browser"},
-		{strings.Join(keys.ShowProfiles, "/"), "Show profiles"},
-		{strings.Join(keys.ToggleStrict, "/"), "Toggle strict mode"},
-		{strings.Join(keys.ToggleTheme, "/"), "Toggle theme"},
-		{strings.Join(keys.Help, "/"), "Show this help"},
-	})
-
-	// Schema Browser
-	section("Schema Browser", []struct{ key, desc string }{
-		{"t", "Quick query templates"},
-		{"e", "Export table"},
-		{"o", "Import into table"},
-		{"enter", "View columns"},
-		{"l/h", "Switch tabs"},
-	})
-
-	// Other
-	section("Other", []struct{ key, desc string }{
-		{strings.Join(keys.Autocomplete, "/"), "Autocomplete"},
-		{strings.Join(keys.Undo, "/"), "Undo"},
-		{strings.Join(keys.Redo, "/"), "Redo"},
-		{strings.Join(keys.Exit, "/"), "Close popup"},
-		{strings.Join(keys.Quit, "/"), "Quit"},
-	})
-
-	content.WriteString(lipgloss.NewStyle().Faint(true).Render("Press Esc or q to close"))
+	content.WriteString(footerStyle.Render("Press ? or Esc to close"))
 
 	// Style popup
-	popupWidth := 50
+	popupWidth := 42
 	popupBox := PopupStyle.
 		Width(popupWidth).
 		MaxHeight(m.height - 4).
+		Padding(1, 2).
 		Background(PopupBg()).
 		Render(content.String())
 

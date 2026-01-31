@@ -1391,11 +1391,54 @@ func (m Model) renderStatusBar() string {
 }
 
 func (m Model) renderHelp() string {
-	helpStyle := lipgloss.NewStyle().Foreground(textFaint)
-	if m.mode == InsertMode {
-		return helpStyle.Render("Ctrl+D: Execute | Esc: Visual mode | Ctrl+C: Quit")
+	// Style for key hints - makes keys look like keyboard buttons
+	keyStyle := lipgloss.NewStyle().
+		Foreground(TextPrimary()).
+		Background(CardBg()).
+		Padding(0, 1).
+		Bold(true)
+
+	sepStyle := lipgloss.NewStyle().Foreground(TextFaint())
+	descStyle := lipgloss.NewStyle().Foreground(TextSecondary())
+
+	// Helper to format a single hint
+	hint := func(key, desc string) string {
+		return keyStyle.Render(key) + descStyle.Render(" "+desc)
 	}
-	return helpStyle.Render("i: Insert mode | k/j: Navigate | Enter: Expand | r: Re-run | e: Edit | x: Delete | Ctrl+C: Quit")
+
+	sep := sepStyle.Render("  ")
+
+	keys := m.config.Keys
+
+	// Context-aware hints based on current state
+	var hints []string
+
+	if m.mode == InsertMode {
+		hints = append(hints,
+			hint(keys.Execute[0], "Run"),
+			hint(keys.Explain[0], "Explain"),
+			hint("esc", "Visual"),
+			hint(keys.Autocomplete[0], "Complete"),
+		)
+	} else {
+		// Visual mode
+		hints = append(hints,
+			hint(keys.InsertMode[0], "Insert"),
+			hint(keys.MoveUp[0]+"/"+keys.MoveDown[0], "Nav"),
+			hint(keys.ToggleExpand[0], "Expand"),
+			hint(keys.Rerun[0], "Rerun"),
+			hint(keys.Edit[0], "Edit"),
+			hint(keys.ToggleSchema[0], "Schema"),
+		)
+	}
+
+	// Always show help and quit
+	hints = append(hints,
+		hint(keys.Help[0], "Help"),
+		hint(keys.Quit[0], "Quit"),
+	)
+
+	return strings.Join(hints, sep)
 }
 
 func (m Model) updateHistoryViewport() Model {
