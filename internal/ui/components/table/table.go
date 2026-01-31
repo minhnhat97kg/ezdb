@@ -6,52 +6,57 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	bbtable "github.com/evertras/bubble-table/table"
+	"github.com/nhath/ezdb/internal/config"
 	"github.com/nhath/ezdb/internal/db"
 )
 
-// Nord colors (matching OpenCode theme)
-const (
-	ColorForeground = "#D8DEE9" // Nord4: Light gray
-	ColorComment    = "#4C566A" // Nord3: Dark gray
-	ColorCyan       = "#88C0D0" // Nord8: Cyan blue
-	ColorGreen      = "#A3BE8C" // Nord14: Green
-	ColorOrange     = "#D08770" // Nord12: Orange
-	ColorPink       = "#B48EAD" // Nord15: Pink
-	ColorPurple     = "#B48EAD" // Nord15: Purple
-	ColorRed        = "#BF616A" // Nord11: Red
-	ColorYellow     = "#EBCB8B" // Nord13: Yellow
-	ColorTeal       = "#8FBCBB" // Nord7: Teal
+var (
+	currentTheme config.Theme
+	currentKeys  config.KeyMap
 )
+
+// Init initializes the table component with theme and keys
+func Init(t config.Theme, k config.KeyMap) {
+	currentTheme = t
+	currentKeys = k
+}
 
 // New creates a new bubble-table with Nord theme (no background)
 func New(cols []bbtable.Column) bbtable.Model {
 	return bbtable.New(cols).
 		WithBaseStyle(lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorForeground))).
+			Foreground(lipgloss.Color(currentTheme.TextPrimary))).
 		HeaderStyle(lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorTeal)).
+			Foreground(lipgloss.Color(currentTheme.Highlight)).
 			Bold(true)).
 		HighlightStyle(lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGreen)).
+			Foreground(lipgloss.Color(currentTheme.Success)).
 			Bold(true)).
 		Focused(true).
 		BorderRounded()
 }
 
 // FromQueryResult builds a table from a QueryResult with type-specific coloring
-func FromQueryResult(res *db.QueryResult) bbtable.Model {
+// maxWidth parameter is kept for API compatibility but not used - table expands to content width
+func FromQueryResult(res *db.QueryResult, maxWidth int) bbtable.Model {
 	if res == nil {
 		return bbtable.New(nil)
 	}
 
 	widths := calculateColumnWidths(res.Columns, res.Rows)
+
 	var cols []bbtable.Column
 	for _, c := range res.Columns {
 		w := widths[c]
-		if w > 40 {
-			w = 40 // Cap max width
+		if w > 50 {
+			w = 50 // Cap max width per column for very long content
 		}
-		cols = append(cols, bbtable.NewColumn(c, c, w))
+		if w < 6 {
+			w = 6 // Minimum width for readability
+		}
+		// Make columns filterable and sortable
+		cols = append(cols, bbtable.NewColumn(c, c, w).
+			WithFiltered(true))
 	}
 
 	var rows []bbtable.Row
@@ -63,10 +68,37 @@ func FromQueryResult(res *db.QueryResult) bbtable.Model {
 		rows = append(rows, bbtable.NewRow(rowData))
 	}
 
+	// Custom key map for better navigation
+	// Custom key map for better navigation
+	keys := bbtable.DefaultKeyMap()
+	if len(currentKeys.NextPage) > 0 { // Check if initialized
+		keys.RowDown.SetKeys("j", "down") // Keep j/k hardcoded for now or add to config? Config lacks RowDown/Up.
+		keys.RowUp.SetKeys("k", "up")     // User config covers PageDown/Up, Scroll.
+
+		keys.PageDown.SetKeys(currentKeys.NextPage...)
+		keys.PageUp.SetKeys(currentKeys.PrevPage...)
+		keys.ScrollRight.SetKeys(currentKeys.ScrollRight...)
+		keys.ScrollLeft.SetKeys(currentKeys.ScrollLeft...)
+		keys.Filter.SetKeys(currentKeys.Filter...)
+	} else {
+		// Fallback defaults if Init not called (shouldn't happen)
+		keys.RowDown.SetKeys("j", "down")
+		keys.RowUp.SetKeys("k", "up")
+		keys.PageDown.SetKeys("n", "pgdown")
+		keys.PageUp.SetKeys("b", "pgup")
+		keys.ScrollRight.SetKeys("l", "right")
+		keys.ScrollLeft.SetKeys("h", "left")
+		keys.Filter.SetKeys("/")
+	}
+	// Disable row selection toggle so we can use enter/space for row actions
+	keys.RowSelectToggle.SetKeys()
+
 	return New(cols).
 		WithRows(rows).
 		WithPageSize(20).
-		WithStaticFooter("Press 'q' to close, 'a' for actions, '/' to filter")
+		WithMinimumHeight(20). // Fixed height to prevent shrinking on last page
+		WithKeyMap(keys).
+		WithFilterInputValue("")
 }
 
 // FromSchemaColumns builds a table for database columns metadata
@@ -93,7 +125,7 @@ func FromSchemaColumns(cols []db.Column) bbtable.Model {
 			"Name":    rd[0],
 			"Type":    rd[1],
 			"Null":    rd[2],
-			"Key":     bbtable.NewStyledCell(rd[3], lipgloss.NewStyle().Foreground(lipgloss.Color(ColorYellow))),
+			"Key":     bbtable.NewStyledCell(rd[3], lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Warning))),
 			"Default": rd[4],
 		}))
 	}
@@ -173,7 +205,7 @@ func FromPreview(preview string) bbtable.Model {
 		if len(rds) == 1 && rds[0] == "..." {
 			rowData := bbtable.RowData{}
 			for _, name := range colNames {
-				rowData[name] = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorComment)).Render("...")
+				rowData[name] = lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.TextFaint)).Render("...")
 			}
 			rows = append(rows, bbtable.NewRow(rowData))
 			continue
@@ -218,14 +250,14 @@ func calculateColumnWidths(headers []string, rows [][]string) map[string]int {
 // GetValueStyle returns a lipgloss style based on value content
 func GetValueStyle(val string) lipgloss.Style {
 	if val == "" || strings.ToUpper(val) == "NULL" || val == "<nil>" {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(ColorPink)).Italic(true)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.TextFaint)).Italic(true)
 	}
 	if _, err := fmt.Sscanf(val, "%f", new(float64)); err == nil {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(ColorPurple))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Accent))
 	}
 	lower := strings.ToLower(val)
 	if lower == "true" || lower == "false" {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(ColorOrange))
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Warning))
 	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(ColorYellow))
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.TextSecondary))
 }

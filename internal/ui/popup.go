@@ -14,21 +14,26 @@ import (
 	"github.com/nhath/ezdb/internal/db"
 )
 
-
 func (m Model) renderPopupOverlay(main string) string {
 	if m.confirming {
 		return m.renderConfirmPopup(main)
 	}
+
+	// Layer the popups: results -> action menu -> row action
+	resultsView := main
+	if m.popupEntry != nil && m.popupResult != nil {
+		resultsView = m.renderResultsPopup(main)
+	}
+
 	if m.showActionPopup {
-		// Render action popup on top of the results popup
-		// First render the results popup as the "main" background for the action popup
-		resultsPopup := m.renderResultsPopup(main)
-		return m.renderActionPopup(resultsPopup)
+		resultsView = m.renderActionPopup(resultsView)
 	}
-	if m.popupEntry == nil || m.popupResult == nil {
-		return main
+
+	if m.showRowActionPopup {
+		resultsView = m.renderRowActionPopup(resultsView)
 	}
-	return m.renderResultsPopup(main)
+
+	return resultsView
 }
 
 func (m Model) renderResultsPopup(main string) string {
@@ -50,13 +55,25 @@ func (m Model) renderResultsPopup(main string) string {
 		content.WriteString("(No results)")
 	}
 
-	content.WriteString("\n\n(Press q or Esc to close, 'a' for actions)")
+	// Show keyboard shortcuts below table
+	if m.tableFilterActive {
+		content.WriteString("\n\n")
+		content.WriteString(m.tableFilterInput.View())
+	} else {
+		content.WriteString("\n\n")
+		shortcuts := lipgloss.NewStyle().Faint(true).Render(
+			"n/b:page • h/l:scroll • /:filter • enter:actions • e:export • q:close")
+		content.WriteString(shortcuts)
+	}
 
-	// Box styling with background
+	// Popup width constraint
+	// Use 100% width but rely on table being smaller (width-30)
+	maxPopupWidth := m.width
+
 	popupBox := PopupStyle.
-		Width(min(120, m.width-4)).
+		MaxWidth(maxPopupWidth).
 		MaxHeight(m.height - 4).
-		Background(lipgloss.Color("#1a1b26")). // Dark background for popup
+		Background(lipgloss.Color("#1a1b26")).
 		Render(content.String())
 
 	// Use bubbletea-overlay to composite popup over main content
@@ -78,6 +95,70 @@ func (m Model) renderActionPopup(main string) string {
 		Background(lipgloss.Color("#1a1b26")).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#bd93f9")).
+		Padding(1).
+		Render(content.String())
+
+	return overlay.Composite(popupBox, main, overlay.Center, overlay.Center, 0, 0)
+}
+
+func (m Model) renderRowActionPopup(main string) string {
+	highlightedRow := m.popupTable.HighlightedRow()
+
+	var content strings.Builder
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#8BE9FD")).
+		Render("Row Actions")
+	content.WriteString(header + "\n\n")
+
+	// Show available actions
+	content.WriteString("1 - View Full Row\n")
+	content.WriteString("2 - Copy as JSON\n")
+	content.WriteString("3 - Copy as CSV\n")
+	content.WriteString("4 - Select this row\n")
+
+	if highlightedRow.Data != nil && m.popupResult != nil {
+		content.WriteString("\nPreview:\n")
+
+		// Show first 2 fields only
+		count := 0
+		for _, col := range m.popupResult.Columns {
+			if count >= 2 {
+				break
+			}
+			if val, ok := highlightedRow.Data[col]; ok {
+				valStr := fmt.Sprintf("%v", val)
+				if len(valStr) > 25 {
+					valStr = valStr[:22] + "..."
+				}
+				if len(col) > 12 {
+					col = col[:9] + "..."
+				}
+				content.WriteString(fmt.Sprintf("%s: %s\n", col, valStr))
+				count++
+			}
+		}
+	}
+
+	content.WriteString("\nPress 1-3, q to close")
+
+	// Calculate max content width
+	// Total rendered width = content width + 2 (borders) + 2 (padding) = content + 4
+	// So: content width = terminal width - 4 - safety margin
+	maxContentWidth := m.width - 8 // Border(2) + Padding(2) + Safety margin(4)
+	if maxContentWidth > 35 {
+		maxContentWidth = 35 // Cap at 35 for readability
+	}
+	if maxContentWidth < 20 {
+		maxContentWidth = 20 // Minimum viable width
+	}
+
+	popupBox := lipgloss.NewStyle().
+		Width(maxContentWidth).
+		Background(lipgloss.Color("#1a1b26")).
+		Foreground(lipgloss.Color("#D8DEE9")).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#ff79c6")).
 		Padding(1).
 		Render(content.String())
 

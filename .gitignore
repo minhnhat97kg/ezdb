@@ -36,3 +36,22 @@ go.sum
 # Temporary files
 *.tmp
 *.temp
+
+# Debug/Log files
+*.log
+debug.log
+debug_metadata.log
+schema_loader_debug.log
+
+# Binary
+ezdb
+ezdb_debug
+
+# Test databases
+*.db
+
+# AI Agent artifacts
+.claude/
+.opencode/
+repomix-output.xml
+scout-*.md

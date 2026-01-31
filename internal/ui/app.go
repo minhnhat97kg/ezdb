@@ -3,6 +3,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -69,11 +71,12 @@ type Model struct {
 	page         int // current results page
 
 	// Popup state
-	showPopup       bool
-	showActionPopup bool
-	popupEntry      *history.HistoryEntry
-	popupResult *db.QueryResult
-	popupTable  table.Model
+	showPopup          bool
+	showActionPopup    bool
+	showRowActionPopup bool // NEW: for showing detailed row actions
+	popupEntry         *history.HistoryEntry
+	popupResult        *db.QueryResult
+	popupTable         table.Model
 
 	// Autocomplete
 	autocompleting    bool
@@ -97,6 +100,10 @@ type Model struct {
 
 	// Cursor tracking for manual rendering
 	cursorIndex int
+
+	// Table filtering
+	tableFilterActive bool
+	tableFilterInput  textinput.Model
 
 	// Debounce
 	debounceID int
@@ -125,6 +132,17 @@ func isModifyingQuery(query string) bool {
 		}
 	}
 	return false
+	return false
+}
+
+func matchKey(msg tea.KeyMsg, keys []string) bool {
+	keyStr := msg.String()
+	for _, k := range keys {
+		if k == keyStr {
+			return true
+		}
+	}
+	return false
 }
 
 // NewModel creates a new UI model
@@ -140,17 +158,31 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 	ti.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ti.BlurredStyle.CursorLine = lipgloss.NewStyle()
 
+	// Initialize Table Filter Input
+	tfi := textinput.New()
+	tfi.Prompt = "/ "
+	tfi.Placeholder = "Filter table..."
+	tfi.CharLimit = 100
+	tfi.Width = 30
+
 	vp := viewport.New(80, 10)
 
 	// Convert config profiles to selector profiles
 	selectorProfiles := make([]profileselector.Profile, len(cfg.Profiles))
 	for i, p := range cfg.Profiles {
 		selectorProfiles[i] = profileselector.Profile{
-			Name:     p.Name,
-			Type:     p.Type,
-			Host:     p.Host,
-			Database: p.Database,
-			Password: p.Password,
+			Name:        p.Name,
+			Type:        p.Type,
+			Host:        p.Host,
+			Port:        p.Port,
+			User:        p.User,
+			Database:    p.Database,
+			Password:    p.Password,
+			SSHHost:     p.SSHHost,
+			SSHPort:     p.SSHPort,
+			SSHUser:     p.SSHUser,
+			SSHKeyPath:  p.SSHKeyPath,
+			SSHPassword: p.SSHPassword,
 		}
 	}
 	ps := profileselector.New(selectorProfiles)
@@ -163,21 +195,22 @@ func NewModel(cfg *config.Config, profile *config.Profile, driver db.Driver, sto
 	}
 
 	return Model{
-		appState:        initialState,
-		mode:            VisualMode,
-		profile:         profile,
-		config:          cfg,
-		driver:          driver,
-		historyStore:    store,
-		profileSelector: ps,
-		schemaBrowser:   schemabrowser.New(),
-		editor:          ti,
-		viewport:        vp,
-		history:         []history.HistoryEntry{},
-		expandedID:      0,
-		selected:        0,
-		page:            0,
-		columns:         make(map[string][]db.Column),
+		appState:         initialState,
+		mode:             VisualMode,
+		profile:          profile,
+		config:           cfg,
+		driver:           driver,
+		historyStore:     store,
+		profileSelector:  ps,
+		schemaBrowser:    schemabrowser.New(),
+		editor:           ti,
+		viewport:         vp,
+		history:          []history.HistoryEntry{},
+		expandedID:       0,
+		selected:         0,
+		page:             0,
+		columns:          make(map[string][]db.Column),
+		tableFilterInput: tfi,
 	}
 }
 
@@ -187,6 +220,7 @@ func (m Model) Init() tea.Cmd {
 		return tea.Batch(
 			textarea.Blink,
 			m.loadHistoryCmd(),
+			schemabrowser.LoadSchemaCmd(m.driver),
 		)
 	}
 	// In profile selection state, just wait for input
@@ -228,10 +262,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case profileselector.ProfileSavedMsg:
 		// Handle saved profile (add or edit)
-		p, err := config.ParseDSN(msg.Profile.Name, msg.Profile.Database)
-		if err != nil {
-			m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("Error parsing connection string: %v", err))
-			return m, nil
+		// Map UI profile to Config profile
+		p := config.Profile{
+			Name:        msg.Profile.Name,
+			Type:        msg.Profile.Type,
+			Host:        msg.Profile.Host,
+			Port:        msg.Profile.Port,
+			User:        msg.Profile.User,
+			Database:    msg.Profile.Database,
+			Password:    msg.Profile.Password,
+			SSHHost:     msg.Profile.SSHHost,
+			SSHPort:     msg.Profile.SSHPort,
+			SSHUser:     msg.Profile.SSHUser,
+			SSHKeyPath:  msg.Profile.SSHKeyPath,
+			SSHPassword: msg.Profile.SSHPassword,
 		}
 
 		if msg.IsNew {
@@ -241,19 +285,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("✓ Added profile: %s", p.Name))
 				// Reload profile selector with updated list
-				profiles := make([]profileselector.Profile, len(m.config.Profiles))
-				for i, cp := range m.config.Profiles {
-					profiles[i] = profileselector.Profile{
-						Name:     cp.Name,
-						Type:     cp.Type,
-						Host:     cp.Host,
-						Port:     cp.Port,
-						User:     cp.User,
-						Database: cp.Database,
-						Password: cp.Password,
-					}
-				}
-				m.profileSelector = m.profileSelector.SetProfiles(profiles)
+				m.reloadProfiles()
 			}
 		} else {
 			// Update existing profile
@@ -262,19 +294,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.profileSelector = m.profileSelector.SetStatusMessage(fmt.Sprintf("✓ Updated profile: %s", p.Name))
 				// Reload profile selector with updated list
-				profiles := make([]profileselector.Profile, len(m.config.Profiles))
-				for i, cp := range m.config.Profiles {
-					profiles[i] = profileselector.Profile{
-						Name:     cp.Name,
-						Type:     cp.Type,
-						Host:     cp.Host,
-						Port:     cp.Port,
-						User:     cp.User,
-						Database: cp.Database,
-						Password: cp.Password,
-					}
-				}
-				m.profileSelector = m.profileSelector.SetProfiles(profiles)
+				m.reloadProfiles()
 			}
 		}
 		return m, nil
@@ -377,9 +397,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Popup handling
 		if m.showPopup {
-			if m.showActionPopup {
+			// Handle filter input if active
+			if m.tableFilterActive {
+				if msg.Type == tea.KeyEnter || msg.Type == tea.KeyEsc {
+					m.tableFilterActive = false
+					m.tableFilterInput.Blur()
+					return m, nil
+				}
+				var cmd tea.Cmd
+				// Convert KeyMsg back to generic Msg for textinput.Update
+				// textinput.Update expects tea.Msg
+				// Since we are inside case tea.KeyMsg, msg is tea.KeyMsg
+				// We need to pass it as tea.Msg
+				m.tableFilterInput, cmd = m.tableFilterInput.Update(msg)
+				m.popupTable = m.popupTable.WithFilterInputValue(m.tableFilterInput.Value())
+				return m, cmd
+			}
+
+			// Row action popup (innermost layer)
+			if m.showRowActionPopup {
+				if matchKey(msg, m.config.Keys.Exit) {
+					m.showRowActionPopup = false
+					return m, nil
+				}
 				switch msg.String() {
-				case "q", "esc":
+				case "1": // View full row
+					// TODO: Implement full row view
+					return m, nil
+				case "2": // Copy as JSON
+					return m, m.copyRowAsJSON()
+				case "3": // Copy as CSV
+					return m, m.copyRowAsCSV()
+				case "4": // Select this row (Query)
+					return m.selectRowAsQuery()
+				}
+				return m, nil
+			}
+
+			// Action menu popup (middle layer)
+			if m.showActionPopup {
+				if matchKey(msg, m.config.Keys.Exit) {
 					m.showActionPopup = false
 					return m, nil
 				}
@@ -387,15 +444,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			switch msg.String() {
-			case "q", "esc":
+			// Table popup (outer layer)
+			// Check for special keys BEFORE passing to table
+			if matchKey(msg, m.config.Keys.Exit) {
 				m.showPopup = false
+				m.tableFilterInput.Blur()
+				m.tableFilterInput.SetValue("")
+				m.popupTable = m.popupTable.WithFilterInputValue("")
 				return m, nil
-			case "a":
+			} else if msg.String() == "a" {
 				m.showActionPopup = true
 				return m, nil
+			} else if matchKey(msg, m.config.Keys.Filter) {
+				m.tableFilterActive = true
+				m.tableFilterInput.Focus()
+				// Don't clear value so user can refine filter
+				return m, textinput.Blink
+			} else if matchKey(msg, m.config.Keys.RowAction) {
+				// Show row action popup for highlighted row
+				m.showRowActionPopup = true
+				return m, nil
+			} else if matchKey(msg, m.config.Keys.Export) {
+				// Export table
+				return m, m.exportTable()
 			}
 
+			// Pass other keys to table for navigation, filtering, etc.
 			var cmd tea.Cmd
 			m.popupTable, cmd = m.popupTable.Update(msg)
 			return m, cmd
@@ -449,18 +523,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			switch msg.String() {
-			case "ctrl+space":
+			keyStr := msg.String()
+
+			if keyStr == "ctrl+space" {
 				m.autocompleting = true
 				m = m.updateSuggestions()
 				if len(m.tables) == 0 && !m.loadingTables {
-					m.loadingTables = true
-					cmd = m.fetchTablesCmd()
-					cmds = append(cmds, cmd)
+					// m.loadingTables = true
+					// cmd = m.fetchTablesCmd()
+					// cmds = append(cmds, cmd)
 				}
 				return m, tea.Batch(cmds...)
-
-			case "ctrl+d": // Execute query
+			} else if matchKey(msg, m.config.Keys.Execute) {
 				query := strings.TrimSpace(m.editor.Value())
 				if query != "" {
 					m.editor.SetValue("")
@@ -483,8 +557,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Scroll to bottom handled by history update
 				}
 				return m, tea.Batch(cmds...)
-
-			case "ctrl+z": // Undo
+			} else if keyStr == "ctrl+z" {
 				if len(m.undoStack) > 0 {
 					// Push current to redo
 					m.redoStack = append(m.redoStack, m.editor.Value())
@@ -494,8 +567,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.SetValue(prev)
 				}
 				return m, nil
-
-			case "ctrl+y": // Redo
+			} else if keyStr == "ctrl+y" {
 				if len(m.redoStack) > 0 {
 					// Push current to undo
 					m.undoStack = append(m.undoStack, m.editor.Value())
@@ -505,8 +577,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.SetValue(next)
 				}
 				return m, nil
-
-			case "esc": // Switch to visual mode
+			} else if matchKey(msg, m.config.Keys.Exit) {
 				m.mode = VisualMode
 				m.editor.Blur()
 				if len(m.history) > 0 {
@@ -565,20 +636,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if m.autocompleting && len(m.tables) == 0 && !m.loadingTables {
-				m.loadingTables = true
-				return m, m.fetchTablesCmd()
+				// Tables should be loaded by schema browser on startup
+				// If not, we could trigger it, but for now let's avoid redundant fetches
+				// m.loadingTables = true
 			}
 		}
 		return m, nil
 
-	case TablesFetchedMsg:
-		m.tables = msg.Tables
-		m.columns = msg.Columns
+	case schemabrowser.SchemaLoadedMsg:
+		if msg.Err != nil {
+			m.errorMsg = fmt.Sprintf("Schema load failed: %v", msg.Err)
+		} else {
+			m.tables = msg.Tables
+			m.columns = msg.Columns
+		}
 		m.loadingTables = false
 		if m.autocompleting {
 			m = m.updateSuggestions()
 		}
-		return m, nil
+		// Also pass to schema browser component
+		var cmd tea.Cmd
+		m.schemaBrowser, cmd = m.schemaBrowser.Update(msg)
+		return m, cmd
 
 	case PagerFinishedMsg:
 		if msg.Err != nil {
@@ -615,7 +694,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// No pager - show popup with full result table
 					m.popupEntry = msg.Entry
 					m.popupResult = msg.Result
-					m.popupTable = eztable.FromQueryResult(msg.Result).
+					// Create table without width constraints for scrolling
+					m.popupTable = eztable.FromQueryResult(msg.Result, 0).
 						Focused(true)
 					m.updatePopupTable()
 					m.showPopup = true
@@ -662,12 +742,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err == nil {
 			m.popupEntry = msg.Entry
 			m.popupResult = msg.Result
-			m.popupTable = eztable.FromQueryResult(msg.Result).
+			// Create table without width constraints for scrolling
+			m.popupTable = eztable.FromQueryResult(msg.Result, 0).
 				Focused(true)
 			m.updatePopupTable()
 			m.showPopup = true
 		} else {
 			m.errorMsg = msg.Err.Error()
+		}
+		return m, nil
+
+	case ExportCompleteMsg:
+		if msg.Err != nil {
+			m.errorMsg = fmt.Sprintf("Export failed: %v", msg.Err)
+		} else {
+			m = m.addSystemMessage(fmt.Sprintf("Exported to: %s", msg.Path))
 		}
 		return m, nil
 	}
@@ -684,40 +773,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleVisualMode handles keys in visual mode
 func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "i": // Switch to insert mode
+	// switch msg.String() {
+	keyStr := msg.String()
+
+	if keyStr == "i" {
 		m.mode = InsertMode
 		m.editor.Focus()
 		// Ensure cursor is at end?
 		return m, textinput.Blink
-	case "k", "up": // Move up (older)
+	} else if keyStr == "k" || keyStr == "up" { // Move up (older)
 		if m.selected > 0 {
 			m.selected--
 			m = m.ensureSelectionVisible()
 		}
-	case "j", "down": // Move down (newer)
+	} else if keyStr == "j" || keyStr == "down" { // Move down (newer)
 		if m.selected < len(m.history)-1 {
 			m.selected++
 			m = m.ensureSelectionVisible()
 		}
-	case "h", "left": // Scroll left
+	} else if matchKey(msg, m.config.Keys.ScrollLeft) { // Scroll left
 		if m.expandedID != 0 {
 			m.expandedTable = m.expandedTable.ScrollLeft()
 		}
-	case "l", "right": // Scroll right
+	} else if matchKey(msg, m.config.Keys.ScrollRight) { // Scroll right
 		if m.expandedID != 0 {
 			m.expandedTable = m.expandedTable.ScrollRight()
 		}
-	case "g": // gg = go to top (wait for second g)
+	} else if keyStr == "g" {
 		// For simplicity, single 'g' goes to top (gg would require state tracking)
 		m.selected = 0
 		m = m.ensureSelectionVisible()
-	case "G": // Go to bottom
+	} else if keyStr == "G" {
 		if len(m.history) > 0 {
 			m.selected = len(m.history) - 1
 			m = m.ensureSelectionVisible()
 		}
-	case "enter", "space": // Toggle expansion
+	} else if keyStr == "enter" || keyStr == "space" { // Toggle expansion
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			if m.expandedID == entry.ID {
@@ -732,7 +823,7 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Re-calculate visibility after expansion change
 			m = m.ensureSelectionVisible()
 		}
-	case "r": // Re-run selected query
+	} else if keyStr == "r" { // Re-run selected query
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			if m.strictMode && isModifyingQuery(entry.Query) {
@@ -743,11 +834,11 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, m.executeQueryCmd(entry.Query)
 		}
-	case "t": // Toggle strict mode
+	} else if keyStr == "t" { // Toggle strict mode
 		m.strictMode = !m.strictMode
 		m.errorMsg = "" // Clear error if toggling
 		return m, nil
-	case "e": // Edit selected query
+	} else if keyStr == "e" { // Edit selected query
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			m.editor.SetValue(entry.Query)
@@ -755,7 +846,7 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.editor.Focus()
 			return m, textinput.Blink
 		}
-	case "x": // Delete selected query
+	} else if keyStr == "x" { // Delete selected query
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			m.historyStore.Delete(entry.ID)
@@ -765,18 +856,18 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m = m.ensureSelectionVisible()
 		}
-	case "y": // Copy selected query to clipboard
+	} else if keyStr == "y" { // Copy selected query to clipboard
 		if m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			return m, m.copyToClipboardCmd(entry.Query)
 		}
-	case "/": // Enter search mode
+	} else if matchKey(msg, m.config.Keys.Filter) { // Enter search mode
 		m.searching = true
 		m.searchQuery = ""
 		m.searchInput.SetValue("")
 		m.searchInput.Focus()
 		return m, textinput.Blink
-	case "tab": // Toggle schema browser
+	} else if keyStr == "tab" { // Toggle schema browser
 		m.schemaBrowser = m.schemaBrowser.Toggle()
 		if m.schemaBrowser.IsVisible() && m.driver != nil {
 			sb, sbCmd := m.schemaBrowser.StartLoading()
@@ -962,33 +1053,165 @@ func (m *Model) updatePopupTable() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
-	// Match PopupStyle width logic from popup.go
-	popupWidth := m.width - 4
-	if popupWidth > 120 {
-		popupWidth = 120
-	}
-	
-	// Table width = popup width - padding (2*2) - border (2) - safety (6) = -12
-	tableWidth := popupWidth - 12
-	if tableWidth < 10 {
-		tableWidth = 10
-	}
 
-	// Calculate height
-	// Window Height
-	// - Popup Margin (4)
-	// - Popup Border/Padding (4)
-	// - Header Text (3 lines)
-	// - Footer Text (3 lines)
-	// - Table Chrome (~6 lines)
-	// - Safety Buffer (8 lines)
-	// Total deduction: ~28
+	// Set table dimensions
+	// Height: based on available vertical space
+	// Width: constrain to prevent popup overflow, table will be horizontally scrollable
 	availableHeight := m.height - 28
 	if availableHeight < 3 {
 		availableHeight = 3
 	}
 
+	// Table width should fit within terminal with room for popup borders and padding
+	// Aggressive margin (30) to absolutely ensure no overflow
+	maxTableWidth := m.width - 30
+	if maxTableWidth < 40 {
+		maxTableWidth = 40
+	}
+
 	m.popupTable = m.popupTable.
-		WithTargetWidth(tableWidth).
-		WithPageSize(availableHeight)
+		WithPageSize(availableHeight).
+		WithTargetWidth(maxTableWidth)
+}
+
+func (m Model) selectRowAsQuery() (Model, tea.Cmd) {
+	if m.popupTable.HighlightedRow().Data == nil {
+		return m, nil
+	}
+
+	// Extract table name from query
+	// This is naive but works for simple "SELECT * FROM table" queries
+	query := m.popupEntry.Query
+	re := regexp.MustCompile(`(?i)from\s+["']?([a-zA-Z0-9_]+)["']?`)
+	matches := re.FindStringSubmatch(query)
+	if len(matches) < 2 {
+		m.errorMsg = "Could not determine table name from query"
+		return m, nil
+	}
+	tableName := matches[1]
+
+	// Find PK columns
+	// Try direct match first
+	cols, ok := m.columns[tableName]
+	if !ok {
+		// Try case-insensitive match
+		found := false
+		for realName, c := range m.columns {
+			if strings.EqualFold(realName, tableName) {
+				tableName = realName
+				cols = c
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Log full debug info to file since UI might truncate it
+			f, _ := os.OpenFile("debug_metadata.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if f != nil {
+				fmt.Fprintf(f, "Timestamp: %s\nTable: %s\nLoaded Tables Count: %d\nColumns found for table: %v\nAll tables: %v\n\n",
+					time.Now(), tableName, len(m.tables), m.columns[tableName], m.tables)
+				f.Close()
+			}
+
+			m.errorMsg = fmt.Sprintf("Metadata missing for %s (Tabs: %d). See debug_metadata.log", tableName, len(m.tables))
+			return m, nil
+		}
+	}
+
+	var pkCols []db.Column
+	for _, c := range cols {
+		if c.Key == "PRI" {
+			pkCols = append(pkCols, c)
+		}
+	}
+
+	if len(pkCols) == 0 {
+		m.errorMsg = fmt.Sprintf("No primary key found for table %s", tableName)
+		return m, nil
+	}
+
+	// Construct WHERE clause
+	var whereParts []string
+	row := m.popupTable.HighlightedRow().Data
+	for _, col := range pkCols {
+		val, ok := row[col.Name]
+		if !ok {
+			continue
+		}
+
+		val = unwrapCellValue(val)
+
+		val = unwrapCellValue(val)
+
+		valStr := fmt.Sprintf("'%v'", val)
+
+		// Don't quote numbers or booleans
+		typeUpper := strings.ToUpper(col.Type)
+		if strings.Contains(typeUpper, "INT") ||
+			strings.Contains(typeUpper, "FLOAT") ||
+			strings.Contains(typeUpper, "DOUBLE") ||
+			strings.Contains(typeUpper, "DECIMAL") ||
+			strings.Contains(typeUpper, "NUMERIC") ||
+			strings.Contains(typeUpper, "REAL") ||
+			strings.Contains(typeUpper, "BOOL") {
+			valStr = fmt.Sprintf("%v", val)
+		}
+
+		whereParts = append(whereParts, fmt.Sprintf("%s = %s", col.Name, valStr))
+	}
+
+	if len(whereParts) == 0 {
+		m.errorMsg = "Could not construct WHERE clause from row data"
+		return m, nil
+	}
+
+	newQuery := fmt.Sprintf("SELECT * FROM %s WHERE %s;", tableName, strings.Join(whereParts, " AND "))
+
+	m.editor.SetValue(newQuery)
+	// Close popups
+	m.showPopup = false
+	m.showRowActionPopup = false
+	m.showActionPopup = false
+	m.mode = InsertMode
+
+	return m, nil
+}
+
+// unwrapCellValue extracts the raw value from a bubble-table StyledCell if necessary
+// Since StyledCell fields might be unexported or hard to access, we use a robust string check
+func unwrapCellValue(val interface{}) interface{} {
+	if _, ok := val.(table.StyledCell); ok {
+		// Formatted struct looks like {Value Style ...}
+		// e.g. {3 [38;2;...}
+		s := fmt.Sprintf("%v", val)
+		s = strings.TrimPrefix(s, "{")
+		if idx := strings.Index(s, " "); idx != -1 {
+			return s[:idx]
+		}
+		// Fallback: return the whole string if parsing fails, but cleaner
+		return strings.TrimSuffix(s, "}")
+	}
+	return val
+}
+
+// reloadProfiles updates the profile selector with current config
+func (m *Model) reloadProfiles() {
+	profiles := make([]profileselector.Profile, len(m.config.Profiles))
+	for i, cp := range m.config.Profiles {
+		profiles[i] = profileselector.Profile{
+			Name:        cp.Name,
+			Type:        cp.Type,
+			Host:        cp.Host,
+			Port:        cp.Port,
+			User:        cp.User,
+			Database:    cp.Database,
+			Password:    cp.Password,
+			SSHHost:     cp.SSHHost,
+			SSHPort:     cp.SSHPort,
+			SSHUser:     cp.SSHUser,
+			SSHKeyPath:  cp.SSHKeyPath,
+			SSHPassword: cp.SSHPassword,
+		}
+	}
+	m.profileSelector = m.profileSelector.SetProfiles(profiles)
 }
