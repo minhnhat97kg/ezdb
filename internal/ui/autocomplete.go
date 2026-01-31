@@ -119,7 +119,6 @@ func ParseSQLContext(sql string, cursorPos int) SQLContext {
 		switch t {
 		case "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER":
 			ctx.StatementType = t
-			break
 		}
 		if ctx.StatementType != "" {
 			break

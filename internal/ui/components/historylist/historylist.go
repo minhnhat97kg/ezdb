@@ -289,10 +289,18 @@ func (m *Model) renderItem(i int) string {
 	// Preview
 	if item.Preview() != "" {
 		previewLines := strings.Split(item.Preview(), "\n")
+		var previewBody strings.Builder
 		for _, line := range previewLines {
-			content.WriteString(m.styles.Faint.Render("  " + line))
-			content.WriteString("\n")
+			previewBody.WriteString(line + "\n")
 		}
+
+		styledPreview := lipgloss.NewStyle().
+			Foreground(m.styles.Faint.GetForeground()).
+			Padding(0, 4). // Left/Right padding for the preview text
+			Render(previewBody.String())
+
+		content.WriteString(styledPreview)
+		content.WriteString("\n")
 	}
 
 	return style.Render(content.String())

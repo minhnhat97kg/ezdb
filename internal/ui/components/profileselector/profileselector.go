@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nhath/ezdb/internal/config"
+	"github.com/nhath/ezdb/internal/ui/icons"
 )
 
 // State represents the component state
@@ -87,7 +88,10 @@ type Styles struct {
 	StatusError   lipgloss.Style
 	Divider       lipgloss.Style
 	ProfileIcon   lipgloss.Style
+	Logo          lipgloss.Style
 	MenuIcon      lipgloss.Style
+	HelpKey       lipgloss.Style
+	Footer        lipgloss.Style
 }
 
 // DefaultStyles returns the default styling
@@ -96,11 +100,18 @@ func DefaultStyles(theme config.Theme) Styles {
 		Box: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(theme.Highlight)).
-			Padding(1, 3).
-			Width(70),
+			Padding(1, 2).
+			Width(80),
+		Logo: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.Accent)).
+			Bold(true).
+			Align(lipgloss.Center).
+			MarginBottom(2),
 		Title: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color(theme.Accent)).
+			Foreground(lipgloss.Color(theme.TextPrimary)).
+			Background(lipgloss.Color(theme.Highlight)).
+			Padding(0, 1).
 			MarginBottom(1),
 		Subtitle: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.TextFaint)).
@@ -121,9 +132,11 @@ func DefaultStyles(theme config.Theme) Styles {
 		ItemSSH: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.Warning)),
 		Selected: lipgloss.NewStyle().
+			Border(lipgloss.ThickBorder(), false, false, false, true).
+			BorderForeground(lipgloss.Color(theme.Accent)).
 			Background(lipgloss.Color(theme.SelectedBg)).
-			PaddingLeft(2).
-			PaddingRight(2).
+			PaddingLeft(1).
+			PaddingRight(1).
 			MarginBottom(0),
 		SelectedName: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.Success)).
@@ -133,8 +146,7 @@ func DefaultStyles(theme config.Theme) Styles {
 		SelectedHost: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.TextSecondary)),
 		Hint: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(theme.TextFaint)).
-			MarginTop(1),
+			Foreground(lipgloss.Color(theme.TextFaint)),
 		HintKey: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.TextPrimary)).
 			Background(lipgloss.Color(theme.CardBg)).
@@ -150,11 +162,11 @@ func DefaultStyles(theme config.Theme) Styles {
 			MarginBottom(1),
 		FieldLabel: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.TextFaint)).
-			Width(14),
+			Width(16),
 		FieldLabelAct: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.Accent)).
 			Bold(true).
-			Width(14),
+			Width(16),
 		StatusSuccess: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.Success)).
 			Bold(true),
@@ -167,6 +179,13 @@ func DefaultStyles(theme config.Theme) Styles {
 			Foreground(lipgloss.Color(theme.Accent)),
 		MenuIcon: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(theme.Success)),
+		HelpKey: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextFaint)).
+			Faint(true),
+		Footer: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(theme.TextPrimary)).
+			Bold(false).
+			Align(lipgloss.Center),
 	}
 }
 
@@ -554,115 +573,252 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) View() string {
 	var b strings.Builder
 
-	if m.state == StateEnteringPassword {
-		// Password input view
-		p := m.SelectedProfile()
-		b.WriteString(m.styles.Title.Render("Enter Password"))
-		b.WriteString("\n")
-		b.WriteString(m.styles.PasswordLabel.Render("Profile: " + p.Name + " (" + p.Type + ")"))
-		b.WriteString("\n\n")
-		b.WriteString(m.passwordInput.View())
-		b.WriteString("\n\n")
-		b.WriteString(m.styles.Hint.Render("Enter: Connect  Esc: Back"))
-	} else if m.state == StateAddingProfile || m.state == StateEditingProfile {
-		// Profile form view (Add or Edit)
-		title := "Add New Profile"
-		if m.state == StateEditingProfile {
-			title = "Edit Profile: " + m.editingProfile.Name
-		}
-		b.WriteString(m.styles.Title.Render(title))
+	// Logo for Home Screen
+	logo := `
+  ███████╗███████╗██████╗ ██████╗ 
+  ██╔════╝╚══███╔╝██╔══██╗██╔══██╗
+  █████╗    ███╔╝ ██║  ██║██████╔╝
+  ██╔══╝   ███╔╝  ██║  ██║██╔══██╗
+  ███████╗███████╗██████╔╝██████╔╝
+  ╚══════╝╚══════╝╚═════╝ ╚═════╝ `
+
+	itemWidth := m.styles.Box.GetWidth() - 6
+
+	if m.state == StateSelectingProfile {
+		// Center the logo
+		centeredLogo := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.styles.Logo.Render(logo))
+		b.WriteString(centeredLogo)
 		b.WriteString("\n\n")
 
-		// Helper to render field
-		renderField := func(label string, input textinput.Model, idx int) {
-			prefix := "  "
-			if m.formFocused == idx {
-				prefix = "→ "
-				label = m.styles.PasswordLabel.Render(label)
-			} else {
-				label = m.styles.Hint.Render(label)
+		// Center the title
+		centeredTitle := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.styles.Title.Render(" SELECT PROFILE "))
+		b.WriteString(centeredTitle)
+		b.WriteString("\n\n")
+
+		for i, p := range m.profiles {
+			style := m.styles.Item.Copy().Width(itemWidth)
+			nameStyle := m.styles.ItemName
+			hostStyle := m.styles.ItemHost
+
+			// Selection indicator and icon
+			icon := icons.GetDatabaseIcon(p.Type)
+
+			prefix := "   "
+			if i == m.selected {
+				style = m.styles.Selected.Copy().Width(itemWidth)
+				nameStyle = m.styles.SelectedName
+				hostStyle = m.styles.SelectedHost
+				prefix = " " + icons.IconSelect + " "
 			}
-			b.WriteString(prefix + label + "\n")
-			b.WriteString(input.View() + "\n")
+
+			// First row: icon + name
+			nameRow := prefix + icon + " " + nameStyle.Render(p.Name)
+
+			// Second row: faint connection info
+			hostStr := ""
+			if p.Type == "sqlite" {
+				hostStr = p.Database
+			} else {
+				if p.Host != "" {
+					hostStr = limitString(p.Host, 20)
+					if p.Port != 0 {
+						hostStr += fmt.Sprintf(":%d", p.Port)
+					}
+				}
+				if p.Database != "" {
+					if hostStr != "" {
+						hostStr += "/"
+					}
+					hostStr += p.Database
+
+				}
+			}
+			if p.SSHHost != "" {
+				hostStr += fmt.Sprintf(" %s %s", icons.IconLock, p.SSHHost)
+			}
+
+			// Indent the second row to align with name (prefix width + icon width)
+			indent := "      "
+			hostRow := indent + hostStyle.Render(hostStr)
+
+			b.WriteString(style.Render(nameRow+"\n"+hostRow) + "\n")
 		}
 
-		renderField("Name:", m.nameInput, 0)
-		renderField("Type:", m.typeInput, 1)
-		renderField("Host:", m.hostInput, 2)
-		renderField("Port:", m.portInput, 3)
-		renderField("User:", m.userInput, 4)
-		renderField("Database:", m.databaseInput, 5)
-		renderField("Password:", m.passwordFormInput, 6)
-
-		b.WriteString("\n" + m.styles.Title.Render("SSH Tunnel (Optional)") + "\n")
-
-		renderField("SSH Host:", m.sshHostInput, 7)
-		renderField("SSH Port:", m.sshPortInput, 8)
-		renderField("SSH User:", m.sshUserInput, 9)
-		renderField("SSH Key:", m.sshKeyInput, 10)
-		renderField("SSH Password:", m.sshPasswordInput, 11)
-
 		b.WriteString("\n")
-		b.WriteString(m.styles.Hint.Render("Tab: Next field  Enter: Save  Esc: Cancel"))
+		// Footer hints - inline format
+		hints := []struct{ key, desc string }{
+			{"↑↓", "Navigate"},
+			{"Enter", "Select"},
+			{"m", "Manage"},
+			{"q", "Quit"},
+			{"?", "Help"},
+		}
+		var hintParts []string
+		for _, h := range hints {
+			// Clear any margins for inline display
+			desc := m.styles.Hint.Copy().Margin(0).Render(h.desc)
+			key := m.styles.HintKey.Copy().Margin(0).Render(h.key)
+			hintParts = append(hintParts, key+" "+desc)
+		}
+
+		// Footer bar - just center it without a background row
+		footerRow := strings.Join(hintParts, icons.IconSeparator)
+		footer := m.styles.Footer.Copy().
+			Width(itemWidth + 2).
+			MarginTop(1).
+			Render(footerRow)
+
+		b.WriteString(footer)
+		b.WriteString("\n")
+
 	} else if m.state == StateManagementMenu {
 		// Management menu view
-		b.WriteString(m.styles.Title.Render("Profile Management"))
-		b.WriteString("\n")
+		centeredTitle := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.styles.Title.Render(" PROFILE MANAGEMENT "))
+		b.WriteString(centeredTitle)
+		b.WriteString("\n\n")
 
 		p := m.SelectedProfile()
 		if p != nil {
-			b.WriteString(m.styles.Hint.Render("Managing: " + p.Name))
+			centeredSelected := lipgloss.NewStyle().
+				Width(m.styles.Box.GetWidth() - 4).
+				Align(lipgloss.Center).
+				Render(m.styles.Hint.Render("Selected: " + p.Name))
+			b.WriteString(centeredSelected)
 			b.WriteString("\n\n")
 		}
 
-		menuItems := []string{"Add New Profile", "Edit Profile", "Delete Profile", "Cancel"}
+		menuItems := []string{"Add New Profile", "Edit Profile", "Delete Profile", "Back"}
+		itemWidth := m.styles.Box.GetWidth() - 6
 		for i, item := range menuItems {
-			style := m.styles.Item
-			prefix := "  "
+			style := m.styles.Item.Copy().Width(itemWidth)
+			prefix := "   "
 			if i == m.menuSelected {
-				style = m.styles.Selected
-				prefix = "> "
+				style = m.styles.Selected.Copy().Width(itemWidth)
+				prefix = " " + icons.IconSelect + " "
 			}
 			b.WriteString(style.Render(prefix + item))
 			b.WriteString("\n")
 		}
 
 		b.WriteString("\n")
-		b.WriteString(m.styles.Hint.Render("↑/↓: Navigate  Enter: Select  Esc: Back  ?: Help"))
-	} else {
-		// Profile selection view
-		b.WriteString(m.styles.Title.Render("Select Connection Profile"))
-		b.WriteString("\n")
+		footerRow := m.styles.HintKey.Render("Enter") + " " + m.styles.Hint.Copy().Margin(0).Render("Select") +
+			icons.IconSeparator +
+			m.styles.HintKey.Render("Esc") + " " + m.styles.Hint.Copy().Margin(0).Render("Back")
 
-		for i, p := range m.profiles {
-			style := m.styles.Item
+		footer := m.styles.Footer.Copy().
+			Width(itemWidth + 2).
+			MarginTop(1).
+			Render(footerRow)
+		b.WriteString(footer)
+
+	} else if m.state == StateEnteringPassword {
+		// Password input view
+		p := m.SelectedProfile()
+		centeredTitle := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.styles.Title.Render(" AUTHENTICATION "))
+		b.WriteString(centeredTitle)
+		b.WriteString("\n\n")
+
+		centeredLabel := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.styles.PasswordLabel.Render(fmt.Sprintf("Enter password for %s (%s)", p.Name, p.Type)))
+		b.WriteString(centeredLabel)
+		b.WriteString("\n\n")
+
+		// Center text input? Bubbles textinput isn't easily centered inside lipgloss.Place usually,
+		// but we can pad it.
+		tiView := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.passwordInput.View())
+		b.WriteString(tiView)
+
+		b.WriteString("\n\n")
+		footerRow := m.styles.HintKey.Render("Enter") + " " + m.styles.Hint.Copy().Margin(0).Render("Connect") +
+			icons.IconSeparator +
+			m.styles.HintKey.Render("Esc") + " " + m.styles.Hint.Copy().Margin(0).Render("Back")
+
+		footer := m.styles.Footer.Copy().
+			Width(itemWidth + 2).
+			MarginTop(1).
+			Render(footerRow)
+		b.WriteString(footer)
+
+	} else if m.state == StateAddingProfile || m.state == StateEditingProfile {
+		// Profile form view (Add or Edit)
+		title := " NEW PROFILE "
+		if m.state == StateEditingProfile {
+			title = " EDIT PROFILE "
+		}
+		centeredTitle := lipgloss.NewStyle().
+			Width(m.styles.Box.GetWidth() - 4).
+			Align(lipgloss.Center).
+			Render(m.styles.Title.Render(title))
+		b.WriteString(centeredTitle)
+		b.WriteString("\n\n")
+
+		// Helper to render field
+		renderField := func(label string, input textinput.Model, idx int) {
 			prefix := "  "
-			if i == m.selected {
-				style = m.styles.Selected
-				prefix = "> "
+			styleLabel := m.styles.FieldLabel
+			if m.formFocused == idx {
+				prefix = icons.IconArrow
+				styleLabel = m.styles.FieldLabelAct
 			}
-
-			line := prefix + p.Name + " (" + p.Type + ")"
-			if p.Host != "" {
-				line += " - " + p.Host
-			}
-			if p.SSHHost != "" {
-				line += " (via SSH)"
-			}
-
-			b.WriteString(style.Render(line))
-			b.WriteString("\n")
+			// Render label + input
+			b.WriteString(fmt.Sprintf("%2s %s %s\n", prefix, styleLabel.Render(label), input.View()))
 		}
 
-		b.WriteString(m.styles.Hint.Render("↑/↓: Navigate  Enter: Select  m: Manage  q: Quit  ?: Help"))
+		renderField("Name", m.nameInput, 0)
+		renderField("Type", m.typeInput, 1)
+		b.WriteString(m.styles.Divider.Render("──────────────────────────────────────────────────") + "\n")
+		renderField("Host", m.hostInput, 2)
+		renderField("Port", m.portInput, 3)
+		renderField("User", m.userInput, 4)
+		renderField("Database", m.databaseInput, 5)
+		renderField("Password", m.passwordFormInput, 6)
+
+		b.WriteString("\n" + m.styles.SectionTitle.Render(" SSH Tunnel (Optional) ") + "\n")
+
+		renderField("SSH Host", m.sshHostInput, 7)
+		renderField("SSH Port", m.sshPortInput, 8)
+		renderField("SSH User", m.sshUserInput, 9)
+		renderField("SSH Key", m.sshKeyInput, 10)
+		renderField("SSH Password", m.sshPasswordInput, 11)
+
+		b.WriteString("\n")
+		footerRow := m.styles.HintKey.Render("Tab") + " " + m.styles.Hint.Copy().Margin(0).Render("Next") +
+			icons.IconSeparator +
+			m.styles.HintKey.Render("Enter") + " " + m.styles.Hint.Copy().Margin(0).Render("Save") +
+			icons.IconSeparator +
+			m.styles.HintKey.Render("Esc") + " " + m.styles.Hint.Copy().Margin(0).Render("Cancel")
+
+		footer := m.styles.Footer.Copy().
+			Width(itemWidth + 2).
+			MarginTop(1).
+			Render(footerRow)
+		b.WriteString(footer)
 	}
 
 	// Show status message if set
 	if m.statusMessage != "" {
-		b.WriteString("\n")
-		statusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#A3BE8C")). // Nord14: Green
-			Bold(true)
+		b.WriteString("\n\n")
+		statusStyle := m.styles.StatusSuccess
+		if strings.HasPrefix(m.statusMessage, "Error") {
+			statusStyle = m.styles.StatusError
+		}
 		b.WriteString(statusStyle.Render(m.statusMessage))
 	}
 
@@ -760,4 +916,13 @@ func (m *Model) populateInputs(p *Profile) {
 	m.sshUserInput.SetValue(p.SSHUser)
 	m.sshKeyInput.SetValue(p.SSHKeyPath)
 	m.sshPasswordInput.SetValue(p.SSHPassword)
+}
+
+func limitString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// relace middle with ...
+	half := (maxLen - 3) / 2
+	return s[:half] + "..." + s[len(s)-half:]
 }

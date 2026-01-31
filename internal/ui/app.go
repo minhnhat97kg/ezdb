@@ -298,7 +298,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.profileSelector = m.profileSelector.SetSize(msg.Width, msg.Height)
 		m.schemaBrowser = m.schemaBrowser.SetSize(msg.Width, msg.Height)
 		if m.expandedID != 0 {
-			m.expandedTable = m.expandedTable.WithTargetWidth(msg.Width - 14)
+			m.expandedTable = m.expandedTable.WithMaxTotalWidth(msg.Width - 14)
 		}
 		m.updatePopupTable()
 		m = m.updateHistoryViewport()
@@ -460,7 +460,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.expandedID != 0 && m.selected >= 0 && m.selected < len(m.history) {
 			entry := m.history[m.selected]
 			if strings.Contains(entry.Preview, " | ") {
-				m.expandedTable = eztable.FromPreview(entry.Preview).WithTargetWidth(m.width - 14)
+				m.expandedTable = eztable.FromPreview(entry.Preview).
+					WithMaxTotalWidth(m.width - 14).
+					WithHorizontalFreezeColumnCount(1)
 			}
 		}
 		if m.popupResult != nil {
@@ -542,7 +544,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showImportPopup || m.showExportPopup || m.showRowActionPopup || m.showActionPopup ||
 			m.themeSelector.Visible()
 		if hasPopup && isExitKey {
-			f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 			fmt.Fprintf(f, "Exit key pressed. Stack len: %d. Top: %s\n", m.popupStack.Len(), m.popupStack.TopName())
 			f.Close()
 			// Try stack first
@@ -963,7 +965,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = len(m.history) - 1
 				m.expandedID = msg.Entry.ID
 				if strings.Contains(msg.Entry.Preview, " | ") {
-					m.expandedTable = eztable.FromPreview(msg.Entry.Preview).WithTargetWidth(m.width - 14)
+					m.expandedTable = eztable.FromPreview(msg.Entry.Preview).
+						WithMaxTotalWidth(m.width - 14).
+						WithHorizontalFreezeColumnCount(1)
 				}
 			}
 		} else {
@@ -990,7 +994,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Non-SELECT (INSERT, UPDATE, DELETE) - expand with preview
 					m.expandedID = msg.Entry.ID
 					if strings.Contains(msg.Entry.Preview, " | ") {
-						m.expandedTable = eztable.FromPreview(msg.Entry.Preview).WithTargetWidth(m.width - 14)
+						m.expandedTable = eztable.FromPreview(msg.Entry.Preview).
+							WithMaxTotalWidth(m.width - 14).
+							WithHorizontalFreezeColumnCount(1)
 					}
 				}
 			}
@@ -1017,7 +1023,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = len(m.history) - 1         // Select newest (bottom)
 				m.expandedID = m.history[m.selected].ID // Expand newest by default
 				if strings.Contains(m.history[m.selected].Preview, " | ") {
-					m.expandedTable = eztable.FromPreview(m.history[m.selected].Preview).WithTargetWidth(m.width - 14)
+					m.expandedTable = eztable.FromPreview(m.history[m.selected].Preview).
+						WithMaxTotalWidth(m.width - 14).
+						WithHorizontalFreezeColumnCount(1)
 				}
 				m = m.updateHistoryViewport()
 				m.viewport.GotoBottom()
@@ -1109,7 +1117,9 @@ func (m Model) handleVisualMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.expandedID = entry.ID // Expand
 				if strings.Contains(entry.Preview, " | ") {
-					m.expandedTable = eztable.FromPreview(entry.Preview).WithTargetWidth(m.width - 14)
+					m.expandedTable = eztable.FromPreview(entry.Preview).
+						WithMaxTotalWidth(m.width - 14).
+						WithHorizontalFreezeColumnCount(1)
 				}
 			}
 			// Re-calculate visibility after expansion change
@@ -1370,7 +1380,7 @@ func (m Model) renderStatusBar() string {
 	if m.profile != nil {
 		profileInfo := ConnectionStyle.Render(fmt.Sprintf(" %s ", m.profile.Name))
 
-		dbInfo := fmt.Sprintf(" %s@%s:%d/%s ", m.profile.User, m.profile.Host, m.profile.Port, m.profile.Database)
+		dbInfo := fmt.Sprintf(" %s@%s:%d/%s ", m.profile.User, limitString(m.profile.Host, 20), m.profile.Port, m.profile.Database)
 		if m.profile.Type == "sqlite" {
 			dbInfo = fmt.Sprintf(" sqlite:%s ", m.profile.Database)
 		}
@@ -1706,7 +1716,7 @@ func (m *Model) openHelpPopup() {
 	}
 	// Add to stack so it can be closed with q/Esc
 	m.showHelpPopup = true
-	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	fmt.Fprintf(f, "Pushing help. Stack len before: %d\n", m.popupStack.Len())
 	f.Close()
 	m.popupStack.Push("help", func(m *Model) bool {
@@ -1739,7 +1749,7 @@ func (m *Model) openResultsPopup(entry *history.HistoryEntry, result *db.QueryRe
 	m.popupEntry = entry
 	m.popupResult = result
 	m.showPopup = true
-	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, _ := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	fmt.Fprintf(f, "Pushing results. Stack len before: %d\n", m.popupStack.Len())
 	f.Close()
 	m.popupStack.Push("results", func(m *Model) bool {
@@ -1865,4 +1875,13 @@ func (m Model) addSystemMessage(msg string) Model {
 	m.viewport.SetContent(m.renderHistoryContent(m.viewport.Height))
 	m.viewport.GotoBottom()
 	return m
+}
+
+func limitString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// relace middle with ...
+	half := (maxLen - 3) / 2
+	return s[:half] + "..." + s[len(s)-half:]
 }

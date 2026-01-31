@@ -126,22 +126,42 @@ func (m Model) renderHistoryItem(i int) string {
 	}
 
 	if isExpanded && entry.RowCount > 0 {
-		content.WriteString("\n")
 		// Render the expanded table component
 		tableContentView := m.expandedTable.View()
-		clippedTable := lipgloss.NewStyle().
-			MaxWidth(m.width - 16). // Adjusted for margins
-			Render(tableContentView)
-		content.WriteString(clippedTable)
+		previewStyle := lipgloss.NewStyle().
+			Padding(1, 4)
+
+		if isSelected {
+			previewStyle = previewStyle.
+				BorderLeft(true).
+				BorderStyle(lipgloss.ThickBorder()).
+				BorderForeground(accentColor).
+				PaddingLeft(3) // Adjusted for BorderLeft (4-1=3)
+		}
+
+		content.WriteString(previewStyle.Render(tableContentView))
 		content.WriteString("\n")
 	} else if isExpanded && entry.Preview != "" {
 		// Fallback for non-tabular preview (e.g., affected rows message)
-		content.WriteString("\n")
 		previewLines := strings.Split(entry.Preview, "\n")
+		var previewBody strings.Builder
 		for _, line := range previewLines {
-			content.WriteString(lipgloss.NewStyle().Foreground(textFaint).Render("  " + line))
-			content.WriteString("\n")
+			previewBody.WriteString(line + "\n")
 		}
+
+		previewStyle := lipgloss.NewStyle().
+			Foreground(textFaint).
+			Padding(1, 4)
+
+		if isSelected {
+			previewStyle = previewStyle.
+				BorderLeft(true).
+				BorderStyle(lipgloss.ThickBorder()).
+				BorderForeground(accentColor).
+				PaddingLeft(3)
+		}
+
+		content.WriteString(previewStyle.Render(previewBody.String()))
 		content.WriteString("\n")
 	}
 
