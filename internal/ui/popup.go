@@ -41,7 +41,6 @@ func (m Model) renderResultsPopup(main string) string {
 
 	// Table
 	if len(m.popupResult.Columns) > 0 {
-		m.popupTable = m.popupTable.WithTargetWidth(min(120, m.width-8))
 		content.WriteString(m.popupTable.View())
 	} else {
 		content.WriteString("(No results)")

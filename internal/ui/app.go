@@ -207,6 +207,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.expandedID != 0 {
 			m.expandedTable = m.expandedTable.WithTargetWidth(msg.Width - 14)
 		}
+		m.updatePopupTable()
 		m = m.updateHistoryViewport()
 		return m, nil
 
@@ -615,8 +616,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.popupEntry = msg.Entry
 					m.popupResult = msg.Result
 					m.popupTable = eztable.FromQueryResult(msg.Result).
-						WithPageSize(20).
 						Focused(true)
+					m.updatePopupTable()
 					m.showPopup = true
 				} else {
 					// Non-SELECT (INSERT, UPDATE, DELETE) - expand with preview
@@ -661,7 +662,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err == nil {
 			m.popupEntry = msg.Entry
 			m.popupResult = msg.Result
-			m.popupTable = eztable.FromQueryResult(msg.Result)
+			m.popupTable = eztable.FromQueryResult(msg.Result).
+				Focused(true)
+			m.updatePopupTable()
 			m.showPopup = true
 		} else {
 			m.errorMsg = msg.Err.Error()
@@ -953,4 +956,34 @@ func (m Model) updateHistoryViewport() Model {
 	m.viewport.Height = historyHeight
 	m.viewport.SetContent(m.renderHistoryContent(historyHeight))
 	return m
+}
+
+func (m *Model) updatePopupTable() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	// Match PopupStyle width logic from popup.go
+	popupWidth := m.width - 4
+	if popupWidth > 120 {
+		popupWidth = 120
+	}
+	
+	// Table width = popup width - padding (approx 4)
+	tableWidth := popupWidth - 4
+	if tableWidth < 10 {
+		tableWidth = 10
+	}
+
+	// Calculate height
+	// Popup MaxHeight is m.height - 4
+	// Header takes ~3 lines, Footer ~3 lines, Padding ~2 lines
+	// So table height should be PopupHeight - ~8
+	availableHeight := (m.height - 4) - 10
+	if availableHeight < 5 {
+		availableHeight = 5
+	}
+
+	m.popupTable = m.popupTable.
+		WithTargetWidth(tableWidth).
+		WithPageSize(availableHeight)
 }
