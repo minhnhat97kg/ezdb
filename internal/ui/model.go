@@ -13,6 +13,7 @@ import (
 	"github.com/nhath/ezdb/internal/config"
 	"github.com/nhath/ezdb/internal/db"
 	"github.com/nhath/ezdb/internal/history"
+	"github.com/nhath/ezdb/internal/ui/autocomplete"
 	"github.com/nhath/ezdb/internal/ui/components/profileselector"
 	"github.com/nhath/ezdb/internal/ui/components/schemabrowser"
 	eztable "github.com/nhath/ezdb/internal/ui/components/table"
@@ -69,8 +70,8 @@ type Model struct {
 	// Autocomplete
 	autocompleting    bool
 	suggestions       []string
-	suggestionDetails []string         // Column types, function signatures
-	suggestionTypes   []SuggestionType // Type indicators for suggestions
+	suggestionDetails []string                      // Column types, function signatures
+	suggestionTypes   []autocomplete.SuggestionType // Type indicators for suggestions
 	suggestionIdx     int
 	tables            []string
 	columns           map[string][]db.Column // table -> columns

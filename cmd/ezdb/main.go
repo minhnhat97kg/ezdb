@@ -13,6 +13,7 @@ import (
 	"github.com/nhath/ezdb/internal/history"
 	"github.com/nhath/ezdb/internal/ui"
 	"github.com/nhath/ezdb/internal/ui/components/table"
+	"github.com/nhath/ezdb/internal/ui/styles"
 )
 
 func main() {
@@ -39,7 +40,7 @@ func main() {
 	}
 
 	// Initialize UI styles
-	ui.InitStyles(cfg.Theme)
+	styles.Init(cfg.Theme)
 	table.Init(cfg.Theme, cfg.Keys)
 
 	// Initialize history store

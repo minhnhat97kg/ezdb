@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/ui/styles"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
@@ -19,13 +20,13 @@ func (m Model) View() string {
 		if m.appState == StateConnecting {
 			// Show connecting status
 			connectingStyle := lipgloss.NewStyle().
-				Foreground(AccentColor()).
+				Foreground(styles.AccentColor()).
 				Bold(true)
 			status := connectingStyle.Render("Connecting to " + m.profile.Name + "...")
 			view = lipgloss.JoinVertical(lipgloss.Center, view, status)
 		}
 		if m.connectError != "" {
-			errorStyle := lipgloss.NewStyle().Foreground(ErrorColor())
+			errorStyle := lipgloss.NewStyle().Foreground(styles.ErrorColor())
 			view = lipgloss.JoinVertical(lipgloss.Center, view, errorStyle.Render("Error: "+m.connectError))
 		}
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, view)
@@ -55,7 +56,7 @@ func (m Model) View() string {
 
 	// 2. Render Components
 	inputWidth := m.width - 4
-	inputView := InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
+	inputView := styles.InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
 
 	statusBar := m.renderStatusBar()
 	helpText := m.renderHelp()

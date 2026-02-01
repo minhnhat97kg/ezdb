@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/ui/highlight"
+	"github.com/nhath/ezdb/internal/ui/icons"
+	"github.com/nhath/ezdb/internal/ui/styles"
 )
 
 func (m Model) updateHistoryViewport() Model {
@@ -31,7 +34,7 @@ func (m Model) updateHistoryViewport() Model {
 	helpText := m.renderHelp()
 	// Input area
 	inputWidth := m.width - 4
-	inputView := InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
+	inputView := styles.InputStyle.Width(inputWidth).Render(m.highlightView(m.editor.View()))
 	// Suggestions (only in insert mode)
 	chromeHeight := lipgloss.Height(statusBar) + lipgloss.Height(helpText)
 	availableHeight := m.height - chromeHeight
@@ -94,9 +97,9 @@ func (m Model) renderHistoryItem(i int) string {
 
 	// Query Line with syntax highlighting
 	if entry.Status != "info" {
-		indicator := " "
+		indicator := " " + icons.IconCollapsed + " "
 		if isExpanded {
-			indicator = " "
+			indicator = " " + icons.IconExpanded + " "
 		}
 		headerContent.WriteString(indicator)
 	}
@@ -110,7 +113,7 @@ func (m Model) renderHistoryItem(i int) string {
 	if entry.Status == "info" {
 		headerContent.WriteString(queryText)
 	} else {
-		headerContent.WriteString(HighlightSQL(queryText))
+		headerContent.WriteString(highlight.SQL(queryText))
 	}
 
 	// [EXPANDED] indicator
@@ -120,11 +123,11 @@ func (m Model) renderHistoryItem(i int) string {
 	headerContent.WriteString("\n")
 
 	// Meta Line - plain text for consistent background
-	statusIcon := ""
+	statusIcon := icons.IconSuccess
 	if entry.Status == "error" {
-		statusIcon = ""
+		statusIcon = icons.IconError
 	} else if entry.Status == "info" {
-		statusIcon = ""
+		statusIcon = icons.IconInfo
 	}
 
 	var metaInfo string
@@ -137,12 +140,12 @@ func (m Model) renderHistoryItem(i int) string {
 
 	// Apply full-width background to entire header section
 	// Using cardBg for better contrast
-	headerBg := cardBg
+	headerBg := styles.CardBg()
 
 	headerStyle := lipgloss.NewStyle().
 		Background(headerBg).
-		Foreground(textPrimary). // Nord4 text
-		Width(m.width).          // Full viewport width
+		Foreground(styles.TextPrimary()). // Nord4 text
+		Width(m.width).                   // Full viewport width
 		Padding(1, 1)
 
 	// Add left accent border for selected items
@@ -150,7 +153,7 @@ func (m Model) renderHistoryItem(i int) string {
 		headerStyle = headerStyle.
 			BorderLeft(true).
 			BorderStyle(lipgloss.ThickBorder()).
-			BorderForeground(accentColor). // Global accent
+			BorderForeground(styles.AccentColor()). // Global accent
 			PaddingLeft(1)
 	}
 
@@ -160,10 +163,10 @@ func (m Model) renderHistoryItem(i int) string {
 	// Details
 	if entry.ErrorMessage != "" {
 		if isSelected {
-			content.WriteString(ErrorStyle.Render("  " + entry.ErrorMessage))
+			content.WriteString(styles.ErrorStyle.Render("  " + entry.ErrorMessage))
 			content.WriteString("\n")
 		} else {
-			content.WriteString(ErrorGrayStyle.Render("  " + entry.ErrorMessage))
+			content.WriteString(styles.ErrorGrayStyle.Render("  " + entry.ErrorMessage))
 			content.WriteString("\n")
 		}
 	}
@@ -178,7 +181,7 @@ func (m Model) renderHistoryItem(i int) string {
 			previewStyle = previewStyle.
 				BorderLeft(true).
 				BorderStyle(lipgloss.ThickBorder()).
-				BorderForeground(accentColor).
+				BorderForeground(styles.AccentColor()).
 				PaddingLeft(3) // Adjusted for BorderLeft (4-1=3)
 		}
 
@@ -193,14 +196,14 @@ func (m Model) renderHistoryItem(i int) string {
 		}
 
 		previewStyle := lipgloss.NewStyle().
-			Foreground(textFaint).
+			Foreground(styles.TextFaint()).
 			Padding(1, 4)
 
 		if isSelected {
 			previewStyle = previewStyle.
 				BorderLeft(true).
 				BorderStyle(lipgloss.ThickBorder()).
-				BorderForeground(accentColor).
+				BorderForeground(styles.AccentColor()).
 				PaddingLeft(3)
 		}
 

@@ -1,6 +1,12 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nhath/ezdb/internal/ui/autocomplete"
+	"github.com/nhath/ezdb/internal/ui/icons"
+	"github.com/nhath/ezdb/internal/ui/styles"
+)
 
 // renderSuggestions renders the suggestion dropdown with type indicators
 func (m Model) renderSuggestions() string {
@@ -9,7 +15,7 @@ func (m Model) renderSuggestions() string {
 	}
 
 	if m.loadingTables {
-		return SuggestionBoxStyle.Render("Loading schema...")
+		return styles.SuggestionBoxStyle.Render("Loading schema...")
 	}
 
 	var views []string
@@ -31,25 +37,27 @@ func (m Model) renderSuggestions() string {
 
 	for i := start; i < end; i++ {
 		s := m.suggestions[i]
-		style := SuggestionItemStyle
+		style := styles.SuggestionItemStyle
 		prefix := "  "
 		if i == m.suggestionIdx {
-			style = SuggestionSelectedStyle
-			prefix = " ▶ "
+			style = styles.SuggestionSelectedStyle
+			prefix = " " + icons.IconSelect + " "
 		}
 
 		// Add type indicator
 		typeIndicator := ""
 		if i < len(m.suggestionTypes) {
 			switch m.suggestionTypes[i] {
-			case SuggestKeyword:
-				typeIndicator = " [K]"
-			case SuggestTable:
-				typeIndicator = " [T]"
-			case SuggestColumn:
-				typeIndicator = " [C]"
-			case SuggestFunction:
-				typeIndicator = " [F]"
+			case autocomplete.SuggestKeyword:
+				typeIndicator = " " + icons.IconKeyword
+			case autocomplete.SuggestTable:
+				typeIndicator = " " + icons.IconTypeT
+			case autocomplete.SuggestColumn:
+				typeIndicator = " " + icons.IconTypeC
+			case autocomplete.SuggestFunction:
+				typeIndicator = " " + icons.IconTypeF
+			default:
+				typeIndicator = " " + icons.IconBullet
 			}
 		}
 
@@ -62,5 +70,5 @@ func (m Model) renderSuggestions() string {
 		views = append(views, style.Render(prefix+s+typeIndicator+detail))
 	}
 
-	return SuggestionBoxStyle.Render(strings.Join(views, "\n"))
+	return styles.SuggestionBoxStyle.Render(strings.Join(views, "\n"))
 }

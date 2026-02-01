@@ -758,7 +758,12 @@ func (m Model) View() string {
 			b.WriteString("\n\n")
 		}
 
-		menuItems := []string{"Add New Profile", "Edit Profile", "Delete Profile", "Back"}
+		menuItems := []string{
+			icons.IconAdd + " Add New Profile",
+			icons.IconEdit + " Edit Profile",
+			icons.IconDelete + " Delete Profile",
+			icons.IconCancel + " Back",
+		}
 		itemWidth := m.styles.Box.GetWidth() - 6
 		for i, item := range menuItems {
 			style := m.styles.Item.Copy().Width(itemWidth)
@@ -836,7 +841,7 @@ func (m Model) View() string {
 			prefix := "  "
 			styleLabel := m.styles.FieldLabel
 			if m.formFocused == idx {
-				prefix = icons.IconArrow
+				prefix = icons.IconPointer
 				styleLabel = m.styles.FieldLabelAct
 			}
 			// Render label + input

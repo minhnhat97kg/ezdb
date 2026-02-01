@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/ui/icons"
 )
 
 // Item represents a single list item
@@ -236,7 +237,7 @@ func (m *Model) renderItem(i int) string {
 
 	// Query Line
 	if item.Status() != "info" {
-		content.WriteString(m.styles.Prompt.Render(">"))
+		content.WriteString(m.styles.Prompt.Render(icons.IconSelect))
 	}
 
 	queryText := item.QueryPreview(m.width - 10)
@@ -260,13 +261,13 @@ func (m *Model) renderItem(i int) string {
 	var iconStyle lipgloss.Style
 	switch item.Status() {
 	case "error":
-		statusIcon = ""
+		statusIcon = icons.IconError
 		iconStyle = m.styles.ErrorIcon
 	case "info":
-		statusIcon = ""
+		statusIcon = icons.IconInfo
 		iconStyle = m.styles.InfoIcon
 	default:
-		statusIcon = ""
+		statusIcon = icons.IconSuccess
 		iconStyle = m.styles.SuccessIcon
 	}
 

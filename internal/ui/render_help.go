@@ -4,18 +4,19 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/ui/styles"
 )
 
 func (m Model) renderHelp() string {
 	// Style for key hints - makes keys look like keyboard buttons
 	keyStyle := lipgloss.NewStyle().
-		Foreground(TextPrimary()).
-		Background(CardBg()).
+		Foreground(styles.TextPrimary()).
+		Background(styles.CardBg()).
 		Padding(0, 1).
 		Bold(true)
 
-	sepStyle := lipgloss.NewStyle().Foreground(TextFaint())
-	descStyle := lipgloss.NewStyle().Foreground(TextSecondary())
+	sepStyle := lipgloss.NewStyle().Foreground(styles.TextFaint())
+	descStyle := lipgloss.NewStyle().Foreground(styles.TextSecondary())
 
 	// Helper to format a single hint
 	hint := func(key, desc string) string {

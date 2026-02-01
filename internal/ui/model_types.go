@@ -19,17 +19,6 @@ const (
 	StateReady            AppState = "READY"
 )
 
-// SuggestionType indicates what kind of completion to show
-type SuggestionType int
-
-const (
-	SuggestKeyword SuggestionType = iota
-	SuggestTable
-	SuggestColumn
-	SuggestFunction
-	SuggestAlias
-)
-
 // HelpContext represents the current UI context for help display
 type HelpContext int
 

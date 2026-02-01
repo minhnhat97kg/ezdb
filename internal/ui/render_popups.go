@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nhath/ezdb/internal/ui/styles"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
 )
 
@@ -97,10 +98,10 @@ func (m Model) renderResultsPopup(main string) string {
 	}
 
 	// Table handles its own horizontal scrolling via h/l keys
-	popupBox := PopupStyle.
+	popupBox := styles.PopupStyle.
 		Width(popupWidth).
 		Height(popupHeight).
-		Background(PopupBg()).
+		Background(styles.PopupBg()).
 		Render(content.String())
 
 	// Use bubbletea-overlay to composite popup over main content
@@ -109,7 +110,7 @@ func (m Model) renderResultsPopup(main string) string {
 
 func (m Model) renderActionPopup(main string) string {
 	var content strings.Builder
-	content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(AccentColor()).Render("Row Actions"))
+	content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.AccentColor()).Render("Row Actions"))
 	content.WriteString("\n\n")
 	content.WriteString("• Edit Row\n")
 	content.WriteString("• Delete Row\n")
@@ -117,11 +118,11 @@ func (m Model) renderActionPopup(main string) string {
 	content.WriteString("• Copy Row CSV\n")
 	content.WriteString("\n(Press q or Esc to close)")
 
-	popupBox := PopupStyle.
+	popupBox := styles.PopupStyle.
 		Width(40).
-		Background(PopupBg()).
+		Background(styles.PopupBg()).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(BorderColor()).
+		BorderForeground(styles.BorderColor()).
 		Padding(1).
 		Render(content.String())
 
@@ -132,7 +133,7 @@ func (m Model) renderRowActionPopup(main string) string {
 	var content strings.Builder
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(AccentColor()).
+		Foreground(styles.AccentColor()).
 		Render("Row Actions")
 	content.WriteString(header + "\n\n")
 
@@ -156,10 +157,10 @@ func (m Model) renderRowActionPopup(main string) string {
 
 	popupBox := lipgloss.NewStyle().
 		Width(maxContentWidth).
-		Background(PopupBg()).
-		Foreground(TextPrimary()).
+		Background(styles.PopupBg()).
+		Foreground(styles.TextPrimary()).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(HighlightColor()).
+		BorderForeground(styles.HighlightColor()).
 		Padding(1).
 		Render(content.String())
 
@@ -169,7 +170,7 @@ func (m Model) renderRowActionPopup(main string) string {
 func (m Model) renderConfirmPopup(main string) string {
 	var content strings.Builder
 
-	header := WarningStyle.Render(" CONFIRM DESTRUCTIVE ACTION ")
+	header := styles.WarningStyle.Render(" CONFIRM DESTRUCTIVE ACTION ")
 	content.WriteString(header + "\n\n")
 	content.WriteString("Strict Mode is active. Do you really want to execute this query?\n\n")
 
@@ -180,19 +181,19 @@ func (m Model) renderConfirmPopup(main string) string {
 	}
 	content.WriteString(lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), true).
-		BorderForeground(textFaint).
+		BorderForeground(styles.TextFaint()).
 		Padding(1).
-		Foreground(textPrimary).
+		Foreground(styles.TextPrimary()).
 		Render(q))
 
 	content.WriteString("\n\n")
-	content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(successColor).Render("(y) Yes, execute") + "  " +
-		lipgloss.NewStyle().Bold(true).Foreground(errorColor).Render("(n/Esc) No, cancel"))
+	content.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.SuccessColor()).Render("(y) Yes, execute") + "  " +
+		lipgloss.NewStyle().Bold(true).Foreground(styles.ErrorColor()).Render("(n/Esc) No, cancel"))
 
 	// Box styling with background
-	popupBox := PopupStyle.
+	popupBox := styles.PopupStyle.
 		Width(min(80, m.width-4)).
-		Background(PopupBg()). // Dark background for popup
+		Background(styles.PopupBg()). // Dark background for popup
 		Render(content.String())
 
 	// Use bubbletea-overlay to composite popup over main content
@@ -204,7 +205,7 @@ func (m Model) renderExportPopup(main string) string {
 
 	header := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(AccentColor()).
+		Foreground(styles.AccentColor()).
 		Render("Export Results")
 	content.WriteString(header + "\n\n")
 
@@ -217,10 +218,10 @@ func (m Model) renderExportPopup(main string) string {
 
 	popupBox := lipgloss.NewStyle().
 		Width(50).
-		Background(PopupBg()).
-		Foreground(TextPrimary()).
+		Background(styles.PopupBg()).
+		Foreground(styles.TextPrimary()).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(SuccessColor()).
+		BorderForeground(styles.SuccessColor()).
 		Padding(1).
 		Render(content.String())
 
@@ -251,22 +252,22 @@ func (m Model) renderHelpPopup(main string) string {
 	// Styles
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(AccentColor()).
+		Foreground(styles.AccentColor()).
 		MarginBottom(1)
 
 	sectionStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(HighlightColor()).
+		Foreground(styles.HighlightColor()).
 		MarginTop(1)
 
 	keyStyle := lipgloss.NewStyle().
-		Foreground(TextPrimary()).
-		Background(CardBg()).
+		Foreground(styles.TextPrimary()).
+		Background(styles.CardBg()).
 		Padding(0, 1).
 		Bold(true)
 
 	descStyle := lipgloss.NewStyle().
-		Foreground(TextSecondary())
+		Foreground(styles.TextSecondary())
 
 	rowStyle := lipgloss.NewStyle().
 		MarginLeft(1)
@@ -426,11 +427,11 @@ func (m Model) renderHelpPopup(main string) string {
 
 	// Style popup
 	popupWidth := 42
-	popupBox := PopupStyle.
+	popupBox := styles.PopupStyle.
 		Width(popupWidth).
-		MaxHeight(m.height - 4).
+		MaxHeight(m.height-4).
 		Padding(1, 2).
-		Background(PopupBg()).
+		Background(styles.PopupBg()).
 		Render(content.String())
 
 	return overlay.Composite(popupBox, main, overlay.Center, overlay.Center, 0, 0)
@@ -442,17 +443,17 @@ func (m Model) renderTemplatePopup(main string) string {
 	var content strings.Builder
 
 	// Title
-	title := lipgloss.NewStyle().Bold(true).Foreground(AccentColor()).Render(
+	title := lipgloss.NewStyle().Bold(true).Foreground(styles.AccentColor()).Render(
 		fmt.Sprintf("Quick Queries for: %s", m.templateTable))
 	content.WriteString(title)
 	content.WriteString("\n\n")
 
 	// List templates
 	for i, t := range m.config.QueryTemplates {
-		style := lipgloss.NewStyle().Foreground(TextSecondary())
+		style := lipgloss.NewStyle().Foreground(styles.TextSecondary())
 		prefix := "  "
 		if i == m.templateIdx {
-			style = lipgloss.NewStyle().Foreground(SuccessColor()).Bold(true)
+			style = lipgloss.NewStyle().Foreground(styles.SuccessColor()).Bold(true)
 			prefix = " "
 		}
 		// Show template with replaced table name for preview
@@ -471,10 +472,10 @@ func (m Model) renderTemplatePopup(main string) string {
 	if popupWidth > m.width-10 {
 		popupWidth = m.width - 10
 	}
-	popupBox := PopupStyle.
+	popupBox := styles.PopupStyle.
 		Width(popupWidth).
 		MaxHeight(m.height - 4).
-		Background(PopupBg()).
+		Background(styles.PopupBg()).
 		Render(content.String())
 
 	return overlay.Composite(popupBox, main, overlay.Center, overlay.Center, 0, 0)
@@ -485,7 +486,7 @@ func (m Model) renderTemplatePopup(main string) string {
 func (m Model) renderImportPopup(main string) string {
 	var content strings.Builder
 
-	title := lipgloss.NewStyle().Bold(true).Foreground(AccentColor()).Render(
+	title := lipgloss.NewStyle().Bold(true).Foreground(styles.AccentColor()).Render(
 		fmt.Sprintf("Import into: %s", m.importTable))
 	content.WriteString(title)
 	content.WriteString("\n\n")
@@ -494,10 +495,10 @@ func (m Model) renderImportPopup(main string) string {
 	content.WriteString(lipgloss.NewStyle().Faint(true).Render("Enter: import • Esc: cancel"))
 
 	popupWidth := 60
-	popupBox := PopupStyle.
+	popupBox := styles.PopupStyle.
 		Width(popupWidth).
 		MaxHeight(10).
-		Background(PopupBg()).
+		Background(styles.PopupBg()).
 		Render(content.String())
 
 	return overlay.Composite(popupBox, main, overlay.Center, overlay.Center, 0, 0)
